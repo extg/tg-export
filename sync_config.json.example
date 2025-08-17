@@ -1,0 +1,18 @@
+{
+  "retry_attempts": 3,
+  "retry_delay": 5,
+  "providers": [
+    {
+      "type": "csv",
+      "csv_path": "out/telegram_data.csv",
+      "backup_enabled": true,
+      "encoding": "utf-8"
+    },
+    {
+      "type": "google_sheets",
+      "spreadsheet_id": "SPREADSHEET_ID",
+      "sheet_name": "Telegram Data",
+      "service_account_path": "service_account.json"
+    }
+  ]
+}

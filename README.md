@@ -1,124 +1,262 @@
 # Telegram Export Tool
 
-A simple script for exporting contacts and chats from Telegram using the Telethon library.
+Export contacts and chats from Telegram with support for CSV files and Google Sheets synchronization.
+
+## Features
+
+- Export contacts and chats using Telegram API
+- Save data to CSV files or Google Sheets
+- Merge data from multiple exports
+- Google Sheets setup wizard
+- Environment variable configuration
+- Automatic data backups
+
+## Architecture
+
+### Core Components
+
+- **`tg_export.py`** - Main export script
+- **`data_providers.py`** - Data provider system for CSV and Google Sheets
+- **`setup_google_sheets.py`** - Google Sheets configuration wizard
+
+### Data Providers
+
+1. **CSV Provider** - Local file storage
+2. **Google Sheets Provider** - Cloud synchronization
 
 ## Installation
 
-1. Install dependencies:
+1. **Install dependencies:**
 ```bash
 pip install -r requirements.txt
 ```
 
-## API Keys Setup
+2. **Set up Telegram API credentials:**
+   - Go to https://my.telegram.org/auth
+   - Log in to your Telegram account
+   - Click "API Development Tools"
+   - Create a new application:
+     - App title: any name (e.g., "Export Tool")
+     - Short name: short name (e.g., "export")
+     - Platform: Desktop
+     - Description: description (optional)
+   - Get your `api_id` and `api_hash`
 
-1. Go to https://my.telegram.org/auth
-2. Log in to your Telegram account
-3. Click "API Development Tools"
-4. Create a new application:
-   - App title: any name (e.g., "Export Tool")
-   - Short name: short name (e.g., "export")
-   - Platform: Desktop
-   - Description: description (optional)
-5. Get your `api_id` and `api_hash`
+## Configuration
 
-## Usage
+### Environment Variables
 
-### Setting up environment variables
-
-Copy the example file and fill in your data:
+Create a `.env` file or set environment variables:
 ```bash
-cp .env.example .env
-```
-
-Edit the `.env` file and specify your data:
-```
 TG_API_ID=your_api_id
 TG_API_HASH=your_api_hash
 TG_PHONE_NUMBER=your_phone_number
 ```
 
-Alternatively, you can set environment variables directly:
+### Data Provider Configuration
+
+Copy and configure the sync settings:
 ```bash
-export TG_API_ID="12345678"
-export TG_API_HASH="abcdef1234567890abcdef1234567890"
-export TG_PHONE_NUMBER="+71234567890"
+cp sync_config.json.example sync_config.json
 ```
 
-### 1. Export data from Telegram
+Edit `sync_config.json` to configure your data providers:
+```json
+{
+  "retry_attempts": 3,
+  "retry_delay": 5,
+  "providers": [
+    {
+      "type": "csv",
+      "csv_path": "out/telegram_data.csv",
+      "backup_enabled": true,
+      "encoding": "utf-8"
+    },
+    {
+      "type": "google_sheets",
+      "spreadsheet_id": "YOUR_SPREADSHEET_ID_HERE",
+      "sheet_name": "Telegram Data",
+      "service_account_path": "service_account.json"
+    }
+  ]
+}
+```
+
+## Google Sheets Setup
+
+Use the setup wizard:
+
+```bash
+python setup_google_sheets.py wizard
+```
+
+Manual setup:
+
+1. Create Google Cloud Project and enable Google Sheets API
+2. Create Service Account and download JSON credentials
+3. Create Google Sheet and share with service account email
+4. Update configuration with your spreadsheet ID
+
+For detailed instructions:
+```bash
+python setup_google_sheets.py instructions
+```
+
+### Google Sheets Commands
+
+```bash
+python setup_google_sheets.py wizard        # Setup wizard
+python setup_google_sheets.py instructions  # Setup steps
+python setup_google_sheets.py check         # Verify setup
+python setup_google_sheets.py test [ID]     # Test connection
+python setup_google_sheets.py config ID     # Update config
+```
+
+## Usage
+
+### Basic Export
 
 Run the export script:
 ```bash
 python tg_export.py
 ```
 
-On first run, enter the verification code that will be sent to Telegram.
+On first run, you'll need to enter the verification code sent to your Telegram account.
 
-### 2. Convert to CSV
+### What the Script Does
 
-After exporting data, you can create a CSV file with personal chats:
-```bash
-python json_to_csv.py
-```
+1. **Connects to Telegram** using your API credentials
+2. **Exports contacts** - retrieves all contacts from your Telegram account
+3. **Exports chats** - retrieves information about all your active chats
+4. **Synchronizes data** - uses configured providers to store/update the data
+5. **Smart merging** - combines new data with existing records intelligently
 
-The script will automatically find the latest exported files and create a CSV with all contacts and personal chats.
+## Data Structure
 
-## Results
+The tool exports data in a unified format with the following fields:
 
-All result files are saved in the `out/` folder.
-
-### Export from Telegram
-The `tg_export.py` script creates two JSON files:
-- `out/contacts_YYYYMMDD_HHMMSS.json` - contacts export
-- `out/chats_YYYYMMDD_HHMMSS.json` - chats export
-
-### CSV file
-The `json_to_csv.py` script creates a CSV file:
-- `out/user_chats_YYYYMMDD_HHMMSS.csv` - combined contact and personal chat data
-
-The CSV contains the following fields:
 - `id` - Telegram user ID
-- `username` - user's username
-- `first_name` - first name
-- `last_name` - last name
-- `title` - display name in chat
-- `phone` - phone number (if available)
-- `is_contact` - whether in contacts (Yes/No)
-- `is_bot` - whether is a bot (Yes/No)
-- `has_chat` - whether has active chat (Yes/No)
-- `unread_count` - number of unread messages
-- `last_message_date` - date of last message
+- `username` - User's username (if available)
+- `first_name` - First name
+- `last_name` - Last name
+- `title` - Display name (combination of first and last name)
+- `phone` - Phone number (if available)
+- `is_contact` - Whether the user is in your contacts (Yes/No)
+- `is_bot` - Whether the user is a bot (Yes/No)
+- `has_chat` - Whether you have an active chat with this user (Yes/No)
+- `unread_count` - Number of unread messages in the chat
+- `last_message_date` - Date of the last message in ISO format
+- `last_updated` - Timestamp when the record was last updated
 
-## Data Format
+## Smart Data Merging
 
-### Contacts
-```json
-{
-  "id": 123456789,
-  "username": "username",
-  "first_name": "First Name",
-  "last_name": "Last Name",
-  "phone": "+71234567890",
-  "is_bot": false
-}
+The tool intelligently merges data from multiple sources:
+
+- **Contacts + Chats**: Combines contact information with chat activity
+- **Incremental Updates**: New exports merge with existing data
+- **Field Priority**: Preserves important information (contacts, phone numbers)
+- **Deduplication**: Prevents duplicate records based on Telegram user ID
+
+## File Organization
+
+```
+out/                          # Export directory
+├── telegram_data.csv         # Current CSV data (if CSV provider enabled)
+├── telegram_data.csv.backup_* # Automatic backups
+service_account.json          # Google Sheets credentials (not in git)
+sync_config.json             # Provider configuration
+.env                         # Environment variables (not in git)
 ```
 
-### Chats
-```json
-{
-  "id": 123456789,
-  "title": "Chat Title",
-  "type": "User|Chat|Channel",
-  "username": "username",
-  "participants_count": 100,
-  "unread_count": 5,
-  "last_message_date": "2024-01-01T12:00:00"
-}
-```
+## Data Providers
+
+### CSV Provider
+
+- Stores data in local CSV files
+- Automatic backup creation before overwriting
+- Configurable file path and encoding
+- Supports incremental updates and merging
+
+### Google Sheets Provider
+
+- Real-time cloud synchronization
+- Service Account authentication
+- Automatic sheet creation and management
+- Support for multiple worksheets
+- Share spreadsheets with team members
 
 ## Security
 
-- The session file `session.session` is created to save authorization
-- Never share your API keys with third parties
-- Keep environment variables secure
-- It's recommended to use a `.env` file for storing environment variables
-- All exported data (JSON and CSV files) in the `out/` folder are excluded from git via `.gitignore`
+- **API credentials** are stored in environment variables or `.env` files
+- **Service account keys** are used for Google Sheets (more secure than OAuth)
+- **Local backups** protect against data loss
+- **Gitignore protection** prevents committing sensitive files
+
+### Files excluded from git:
+- `service_account.json`
+- `.env`
+- `session.session` (Telegram session)
+- `out/*.csv` (exported data)
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Missing dependencies**: Run `pip install -r requirements.txt`
+2. **Telegram auth error**: Check API credentials in `.env` file
+3. **Google Sheets access**: Verify service account is shared with spreadsheet
+4. **Configuration errors**: Use `setup_google_sheets.py check` to diagnose
+
+### Verification Commands
+
+```bash
+# Check Google Sheets setup
+python setup_google_sheets.py check
+
+# Test specific spreadsheet
+python setup_google_sheets.py test YOUR_SPREADSHEET_ID
+
+# Check sync configuration
+cat sync_config.json
+```
+
+## Development
+
+### Provider System
+
+The tool uses an abstract provider system for extensibility:
+
+```python
+from data_providers import DataProvider, ProviderManager
+
+# Create custom provider
+class MyProvider(DataProvider):
+    def read_data(self) -> pd.DataFrame: ...
+    def write_data(self, data: pd.DataFrame) -> bool: ...
+    def sync_data(self, new_data: pd.DataFrame) -> pd.DataFrame: ...
+    def is_available(self) -> bool: ...
+
+# Use provider manager
+manager = ProviderManager('sync_config.json')
+manager.sync_data(records)
+```
+
+### Adding New Providers
+
+1. Inherit from `DataProvider` class
+2. Implement required abstract methods
+3. Add to provider factory in `create_provider()`
+4. Update configuration schema
+
+## Contributing
+
+When contributing:
+
+1. Follow the existing code structure
+2. Add tests for new providers
+3. Update documentation for new features
+4. Ensure security best practices
+
+## License
+
+This project is provided as-is for educational and personal use.
