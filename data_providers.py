@@ -420,7 +420,11 @@ class ProviderManager:
         
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
+                config_text = f.read()
+            
+            # Substitute environment variables
+            expanded_config_text = os.path.expandvars(config_text)
+            config = json.loads(expanded_config_text)
             
             for provider_config in config.get('providers', []):
                 try:

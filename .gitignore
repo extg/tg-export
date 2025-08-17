@@ -3,12 +3,10 @@
 
 # Telegram session
 session.session
+session.session-journal
 
 # Google Sheets credentials
 service_account.json
-
-# Configuration files
-sync_config.json
 
 # Output files
 out/

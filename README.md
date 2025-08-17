@@ -42,44 +42,118 @@ pip install -r requirements.txt
      - Description: description (optional)
    - Get your `api_id` and `api_hash`
 
-## Configuration
+## Required Configuration
 
-### Environment Variables
+### 🔑 Environment Variables (Required)
 
-Create a `.env` file or set environment variables:
+Create a `.env` file in the project root with the following variables:
+
 ```bash
-TG_API_ID=your_api_id
-TG_API_HASH=your_api_hash
-TG_PHONE_NUMBER=your_phone_number
+# Telegram API settings (get from https://my.telegram.org/auth)
+TG_API_ID=your_api_id_here           # Your API ID (numeric value)
+TG_API_HASH=your_api_hash_here       # Your API Hash (string)
+TG_PHONE_NUMBER=+1XXXXXXXXXX         # Your phone number in international format
+
+# Google Sheets settings (optional, only if using Google Sheets)
+SPREADSHEET_ID=your_spreadsheet_id_here    # Google Sheets spreadsheet ID
 ```
 
-### Data Provider Configuration
+**❗ Important:**
+- `TG_API_ID` and `TG_API_HASH` - required parameters for Telegram API access
+- `TG_PHONE_NUMBER` - phone number linked to your Telegram account
+- `SPREADSHEET_ID` - only needed if you plan to use Google Sheets synchronization
 
-Copy and configure the sync settings:
-```bash
-cp sync_config.json.example sync_config.json
-```
+### 📊 Data Provider Configuration
 
-Edit `sync_config.json` to configure your data providers:
+The `sync_config.json` file defines where and how to save exported data:
+
 ```json
 {
-  "retry_attempts": 3,
-  "retry_delay": 5,
+  "retry_attempts": 3,        // Number of retry attempts on error
+  "retry_delay": 5,          // Delay between retries (seconds)
   "providers": [
     {
-      "type": "csv",
-      "csv_path": "out/telegram_data.csv",
-      "backup_enabled": true,
-      "encoding": "utf-8"
+      "type": "csv",                        // Provider type: csv or google_sheets
+      "csv_path": "out/telegram_data.csv",  // Path to CSV file
+      "backup_enabled": true,               // Create backups before overwriting
+      "encoding": "utf-8"                   // File encoding
     },
     {
       "type": "google_sheets",
-      "spreadsheet_id": "YOUR_SPREADSHEET_ID_HERE",
-      "sheet_name": "Telegram Data",
-      "service_account_path": "service_account.json"
+      "spreadsheet_id": "${SPREADSHEET_ID}",     // Uses variable from .env
+      "sheet_name": "Telegram Data",             // Sheet name in spreadsheet
+      "service_account_path": "service_account.json"  // Path to Google credentials file
     }
   ]
 }
+```
+
+**Provider Parameters:**
+
+#### CSV Provider:
+- `csv_path` - path to save data file
+- `backup_enabled` - whether to create backups (recommended: `true`)
+- `encoding` - file encoding (recommended: `utf-8`)
+
+#### Google Sheets Provider:
+- `spreadsheet_id` - Google Sheets spreadsheet ID (can use variable `${SPREADSHEET_ID}`)
+- `sheet_name` - worksheet name in the spreadsheet
+- `service_account_path` - path to JSON file with Google service account keys
+
+### 🔒 Google Sheets Files (if using)
+
+If you plan to use Google Sheets synchronization, you need a `service_account.json` file with access keys:
+
+1. Create a project in Google Cloud Console
+2. Enable Google Sheets API
+3. Create a service account
+4. Download the JSON key file
+5. Rename it to `service_account.json` and place in project root
+
+**Structure of service_account.json:**
+```json
+{
+  "type": "service_account",
+  "project_id": "your-project-id",
+  "private_key_id": "key-id",
+  "private_key": "-----BEGIN PRIVATE KEY-----\n...",
+  "client_email": "your-service-account@project.iam.gserviceaccount.com",
+  "client_id": "client-id",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
+}
+```
+
+### ✅ Configuration Verification
+
+Use built-in commands to verify your setup:
+
+```bash
+# Check Google Sheets configuration
+python setup_google_sheets.py check
+
+# Test connection to specific spreadsheet
+python setup_google_sheets.py test YOUR_SPREADSHEET_ID
+
+# Run Google Sheets setup wizard
+python setup_google_sheets.py wizard
+```
+
+## Quick Start
+
+After installing dependencies and setting up configuration (see above), create the necessary files:
+
+1. **Create `.env` file** with your Telegram API credentials
+2. **Check `sync_config.json`** - file is already configured for CSV and Google Sheets
+3. **For Google Sheets**: add `service_account.json` file (if you plan to use it)
+
+Minimal configuration for CSV-only operation:
+```bash
+# .env file
+TG_API_ID=12345678
+TG_API_HASH=abcdef1234567890abcdef1234567890
+TG_PHONE_NUMBER=+1234567890
 ```
 
 ## Google Sheets Setup

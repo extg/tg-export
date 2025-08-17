@@ -10,7 +10,7 @@
     },
     {
       "type": "google_sheets",
-      "spreadsheet_id": "SPREADSHEET_ID",
+      "spreadsheet_id": "${SPREADSHEET_ID}",
       "sheet_name": "Telegram Data",
       "service_account_path": "service_account.json"
     }

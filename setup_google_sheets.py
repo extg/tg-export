@@ -6,7 +6,46 @@ Helps configure Google Sheets integration for Telegram sync
 
 import json
 import os
+import re
 from typing import Optional
+
+
+def check_env_file() -> bool:
+    """Check if .env file exists and has SPREADSHEET_ID"""
+    env_path = '.env'
+    
+    if not os.path.exists(env_path):
+        print(f"❌ {env_path} file not found!")
+        print("Please create .env file from .env.example and set SPREADSHEET_ID")
+        return False
+    
+    spreadsheet_id = read_env_value('SPREADSHEET_ID')
+    if not spreadsheet_id or spreadsheet_id == 'YOUR_SPREADSHEET_ID_HERE':
+        print("❌ SPREADSHEET_ID not set in .env file!")
+        print("Please add your Google Sheets ID to .env file")
+        return False
+    
+    print(f"✓ SPREADSHEET_ID found in .env: {spreadsheet_id}")
+    return True
+
+
+def read_env_value(key: str) -> Optional[str]:
+    """Read a value from .env file"""
+    env_path = '.env'
+    
+    if not os.path.exists(env_path):
+        return None
+    
+    try:
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith(f"{key}="):
+                    return line.split('=', 1)[1].strip()
+        return None
+    except Exception as e:
+        print(f"Error reading .env file: {e}")
+        return None
 
 
 def create_google_sheet_instructions():
@@ -65,9 +104,12 @@ def create_google_sheet_instructions():
     print("   - Give 'Editor' permissions")
     print()
     
-    print("⚙️  STEP 7: Update Configuration")
-    print("   - Edit sync_config.json")
+    print("⚙️  STEP 7: Configure Environment")
+    print("   - Copy .env.example to .env:")
+    print("     cp .env.example .env")
+    print("   - Edit .env file")
     print("   - Replace 'YOUR_SPREADSHEET_ID_HERE' with your spreadsheet ID")
+    print("   - Example: SPREADSHEET_ID=1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms")
     print()
     
     print("💡 FOR CI/CD (GitHub Actions, etc.):")
@@ -84,37 +126,12 @@ def create_google_sheet_instructions():
     print()
 
 
-def update_config_with_spreadsheet_id(spreadsheet_id: str) -> bool:
-    """Update sync_config.json with spreadsheet ID"""
-    config_path = 'sync_config.json'
-    
-    if not os.path.exists(config_path):
-        print(f"Error: {config_path} not found!")
-        return False
-    
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-        
-        # Update Google Sheets provider configuration
-        for provider in config.get('providers', []):
-            if provider.get('type') == 'google_sheets':
-                provider['spreadsheet_id'] = spreadsheet_id
-                break
-        else:
-            print("Error: Google Sheets provider not found in configuration!")
-            return False
-        
-        # Write back the configuration
-        with open(config_path, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
-        
-        print(f"Configuration updated with spreadsheet ID: {spreadsheet_id}")
-        return True
-        
-    except Exception as e:
-        print(f"Error updating configuration: {e}")
-        return False
+def get_spreadsheet_id_from_env() -> Optional[str]:
+    """Get spreadsheet ID from .env file"""
+    spreadsheet_id = read_env_value('SPREADSHEET_ID')
+    if spreadsheet_id and spreadsheet_id != 'YOUR_SPREADSHEET_ID_HERE':
+        return spreadsheet_id
+    return None
 
 
 def check_service_account() -> bool:
@@ -156,21 +173,12 @@ def test_google_sheets_connection(spreadsheet_id: Optional[str] = None):
         from data_providers import GoogleSheetsProvider
         
         if not spreadsheet_id:
-            # Try to get from config
-            try:
-                with open('sync_config.json', 'r') as f:
-                    config = json.load(f)
-                
-                for provider in config.get('providers', []):
-                    if provider.get('type') == 'google_sheets':
-                        spreadsheet_id = provider.get('spreadsheet_id')
-                        break
-            except:
-                pass
+            # Try to get from .env file
+            spreadsheet_id = get_spreadsheet_id_from_env()
         
-        if not spreadsheet_id or spreadsheet_id == 'YOUR_SPREADSHEET_ID_HERE':
+        if not spreadsheet_id:
             print("Error: No valid spreadsheet ID found!")
-            print("Please run this script with a spreadsheet ID or update sync_config.json")
+            print("Please set SPREADSHEET_ID in .env file or provide it as parameter")
             return False
         
         # Test the provider
@@ -333,13 +341,33 @@ def interactive_wizard():
             if not continue_anyway:
                 return False
     
-    # Step 4: Get spreadsheet ID
-    print("\n📊 STEP 4: GOOGLE SHEETS CONFIGURATION")
+    # Step 4: Configure .env file
+    print("\n📊 STEP 4: ENVIRONMENT CONFIGURATION")
     print("-" * 40)
-    print("Now you need to specify your Google Sheets ID.")
+    print("Now you need to configure the .env file with your Google Sheets ID.")
     print("The ID is found in the spreadsheet URL:")
     print("https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit")
     print()
+    
+    # Check if .env exists
+    if not os.path.exists('.env'):
+        print("⚠️  .env file not found!")
+        create_env = wizard_ask_yes_no("Create .env file from .env.example?")
+        if create_env:
+            if os.path.exists('.env.example'):
+                try:
+                    import shutil
+                    shutil.copy('.env.example', '.env')
+                    print("✅ Created .env file from .env.example")
+                except Exception as e:
+                    print(f"❌ Error creating .env file: {e}")
+                    return False
+            else:
+                print("❌ .env.example not found! Please create .env file manually.")
+                return False
+        else:
+            print("❌ .env file is required for configuration.")
+            return False
     
     # Check if sheet was shared with service account
     service_account_shared = wizard_ask_yes_no("Have you shared the spreadsheet with the service account (client_email from service_account.json)?")
@@ -364,12 +392,24 @@ def interactive_wizard():
             print("The spreadsheet won't work without access. Wizard cancelled.")
             return False
     
-    # Get spreadsheet ID
-    spreadsheet_id = wizard_get_input("Enter Spreadsheet ID: ")
+    # Ask user to manually set spreadsheet ID
+    print("\n📝 MANUAL STEP:")
+    print("1. Open your .env file in a text editor")
+    print("2. Find the line: SPREADSHEET_ID=YOUR_SPREADSHEET_ID_HERE")
+    print("3. Replace 'YOUR_SPREADSHEET_ID_HERE' with your actual spreadsheet ID")
+    print("4. Save the file")
+    print()
     
-    if not spreadsheet_id:
-        print("❌ Spreadsheet ID is required!")
+    if not wizard_wait_for_confirmation("Have you updated the SPREADSHEET_ID in .env file?"):
+        print("❌ Please update .env file with your spreadsheet ID.")
         return False
+    
+    # Check if .env has been configured properly
+    if not check_env_file():
+        print("❌ .env file not configured properly!")
+        return False
+    
+    spreadsheet_id = get_spreadsheet_id_from_env()
     
     # Step 5: Test write permissions
     print("\n✅ STEP 5: WRITE PERMISSIONS TEST")
@@ -393,21 +433,15 @@ def interactive_wizard():
             if not continue_anyway:
                 return False
     
-    # Step 6: Update configuration
-    print("\n⚙️ STEP 6: CONFIGURATION UPDATE")
+    # Step 6: Verify configuration
+    print("\n⚙️ STEP 6: CONFIGURATION VERIFICATION")
     print("-" * 40)
     
-    update_config = wizard_ask_yes_no("Update sync_config.json with the new Spreadsheet ID?")
-    
-    if update_config:
-        if update_config_with_spreadsheet_id(spreadsheet_id):
-            print("✅ Configuration updated successfully!")
-        else:
-            print("❌ Error updating configuration!")
-            return False
+    if check_env_file():
+        print("✅ .env file configured correctly!")
     else:
-        print(f"ℹ️  Don't forget to manually update sync_config.json:")
-        print(f"   Replace 'YOUR_SPREADSHEET_ID_HERE' with '{spreadsheet_id}'")
+        print("❌ .env file configuration issue!")
+        return False
     
     # Final summary
     print("\n🎉 SETUP COMPLETED!")
@@ -415,10 +449,10 @@ def interactive_wizard():
     print("✅ Service account configured")
     print("✅ Google Sheets connection working")
     print("✅ Write permissions verified")
-    print("✅ Configuration updated" if update_config else "⚠️  Update configuration manually")
+    print("✅ .env file configured")
     print()
     print("You can now use Google Sheets synchronization!")
-    print("Run: python sync.py")
+    print("Run: python tg_export.py")
     print()
     
     return True
@@ -455,17 +489,13 @@ def main():
             spreadsheet_id = os.sys.argv[2] if len(os.sys.argv) > 2 else None
             test_google_sheets_connection(spreadsheet_id)
             
-        elif command == 'config':
-            if len(os.sys.argv) < 3:
-                print("Usage: python setup_google_sheets.py config SPREADSHEET_ID")
-                return
-            
-            spreadsheet_id = os.sys.argv[2]
-            update_config_with_spreadsheet_id(spreadsheet_id)
+        elif command == 'env':
+            print("Checking .env configuration...")
+            check_env_file()
             
         else:
             print(f"Unknown command: {command}")
-            print("Available commands: wizard, instructions, check, test, config")
+            print("Available commands: wizard, instructions, check, test, env")
     else:
         # Default to wizard mode
         print("🧙‍♂️ Starting interactive setup wizard...")
@@ -474,7 +504,7 @@ def main():
         print("  python setup_google_sheets.py instructions  - Show setup instructions")
         print("  python setup_google_sheets.py check         - Check current setup")
         print("  python setup_google_sheets.py test [ID]     - Test connection")
-        print("  python setup_google_sheets.py config ID     - Update config with Spreadsheet ID")
+        print("  python setup_google_sheets.py env           - Check .env configuration")
         print()
         
         start_wizard = wizard_ask_yes_no("Start interactive setup wizard?")
