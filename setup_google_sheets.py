@@ -207,7 +207,7 @@ def test_google_sheets_connection(spreadsheet_id: Optional[str] = None):
                 'is_bot': ['No'],
                 'has_chat': ['Yes'],
                 'unread_count': [0],
-                'last_message_date': ['2024-01-01T00:00:00']
+                'last_message_date': ['2024-01-01 00:00:00']
             })
             
             if provider.write_data(test_data):

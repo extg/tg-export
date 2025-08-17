@@ -18,6 +18,12 @@ class DataProvider(ABC):
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.last_sync_time: Optional[datetime] = None
+        # Standard columns that come from Telegram export
+        self.standard_columns = {
+            'id', 'username', 'first_name', 'last_name', 'title',
+            'phone', 'is_contact', 'is_bot', 'has_chat', 
+            'unread_count', 'last_message_date', 'last_updated'
+        }
     
     @abstractmethod
     def read_data(self) -> pd.DataFrame:
@@ -46,6 +52,41 @@ class DataProvider(ABC):
     def set_last_sync_time(self, sync_time: datetime):
         """Set last synchronization time"""
         self.last_sync_time = sync_time
+    
+    def preserve_additional_columns(self, existing_record: dict, new_record: dict) -> dict:
+        """Preserve additional columns that are not part of standard Telegram export"""
+        merged_record = existing_record.copy()
+        
+        # Update with new data based on column type
+        for key, new_val in new_record.items():
+            existing_val = existing_record.get(key, '')
+            
+            # Special merge logic for key fields
+            if key == 'is_contact':
+                # If either source says it's a contact, it's a contact
+                merged_record[key] = 'Yes' if (existing_val == 'Yes' or new_val == 'Yes') else 'No'
+            elif key == 'has_chat':
+                # If either source says it has chat, it has chat
+                merged_record[key] = 'Yes' if (existing_val == 'Yes' or new_val == 'Yes') else 'No'
+            elif key in ['phone', 'first_name', 'last_name']:
+                # Prefer non-empty values, existing wins if both have values
+                merged_record[key] = new_val if new_val else existing_val
+            elif key in ['unread_count', 'last_message_date']:
+                # Prefer newer/non-empty values for chat-related fields
+                merged_record[key] = new_val if new_val else existing_val
+            elif key == 'last_updated':
+                # Always update timestamp
+                merged_record[key] = new_val
+            elif key in self.standard_columns:
+                # For other standard fields - prefer new values if they exist
+                merged_record[key] = new_val if new_val else existing_val
+            else:
+                # For additional/custom fields (like status) - preserve existing if new is empty
+                if new_val or key not in existing_record:
+                    merged_record[key] = new_val
+                # else keep existing value
+        
+        return merged_record
 
 
 class CSVDataProvider(DataProvider):
@@ -71,7 +112,7 @@ class CSVDataProvider(DataProvider):
             df = pd.read_csv(self.csv_path, encoding=self.encoding)
             # Ensure last_updated column exists
             if 'last_updated' not in df.columns:
-                df['last_updated'] = datetime.now().isoformat()
+                df['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             return df
         except Exception as e:
             print(f"Error reading CSV file {self.csv_path}: {e}")
@@ -82,7 +123,7 @@ class CSVDataProvider(DataProvider):
         try:
             # Create backup if enabled
             if self.backup_enabled and os.path.exists(self.csv_path):
-                backup_path = f"{self.csv_path}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                backup_path = f"{self.csv_path}.backup_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
                 os.rename(self.csv_path, backup_path)
                 print(f"Created backup: {backup_path}")
             
@@ -91,7 +132,7 @@ class CSVDataProvider(DataProvider):
             
             # Add/update last_updated timestamp
             data = data.copy()
-            data['last_updated'] = datetime.now().isoformat()
+            data['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             # Write to CSV
             data.to_csv(self.csv_path, index=False, encoding=self.encoding)
@@ -128,32 +169,9 @@ class CSVDataProvider(DataProvider):
             new_record = new_row.to_dict()
             
             if user_id in merged_records:
-                # Merge existing and new data intelligently
+                # Merge existing and new data intelligently using preserve method
                 existing_record = merged_records[user_id]
-                
-                # Combine data - prefer non-empty values
-                merged_record = {}
-                for key in new_record.keys():
-                    existing_val = existing_record.get(key, '')
-                    new_val = new_record.get(key, '')
-                    
-                    # Special merge logic for key fields
-                    if key == 'is_contact':
-                        # If either source says it's a contact, it's a contact
-                        merged_record[key] = 'Yes' if (existing_val == 'Yes' or new_val == 'Yes') else 'No'
-                    elif key == 'has_chat':
-                        # If either source says it has chat, it has chat
-                        merged_record[key] = 'Yes' if (existing_val == 'Yes' or new_val == 'Yes') else 'No'
-                    elif key in ['phone', 'first_name', 'last_name']:
-                        # Prefer non-empty values, existing wins if both have values
-                        merged_record[key] = new_val if new_val else existing_val
-                    elif key in ['unread_count', 'last_message_date']:
-                        # Prefer newer/non-empty values for chat-related fields
-                        merged_record[key] = new_val if new_val else existing_val
-                    else:
-                        # Default: prefer new values
-                        merged_record[key] = new_val if new_val else existing_val
-                
+                merged_record = self.preserve_additional_columns(existing_record, new_record)
                 merged_records[user_id] = merged_record
             else:
                 # New record, add it
@@ -263,7 +281,7 @@ class GoogleSheetsProvider(DataProvider):
             
             # Ensure last_updated column exists
             if 'last_updated' not in df.columns:
-                df['last_updated'] = datetime.now().isoformat()
+                df['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             return df
             
@@ -278,7 +296,7 @@ class GoogleSheetsProvider(DataProvider):
             
             # Add/update last_updated timestamp
             data = data.copy()
-            data['last_updated'] = datetime.now().isoformat()
+            data['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             # Prepare data for Google Sheets
             values = [data.columns.tolist()] + data.fillna('').astype(str).values.tolist()
@@ -322,7 +340,7 @@ class GoogleSheetsProvider(DataProvider):
         new_data = new_data.copy()
         new_data['id'] = new_data['id'].astype(str)
         
-        # Smart merging: combine information from both sources (same logic as CSV)
+        # Smart merging: combine information from both sources
         merged_records = {}
         
         # First, add all existing records
@@ -335,32 +353,9 @@ class GoogleSheetsProvider(DataProvider):
             new_record = new_row.to_dict()
             
             if user_id in merged_records:
-                # Merge existing and new data intelligently
+                # Merge existing and new data intelligently using preserve method
                 existing_record = merged_records[user_id]
-                
-                # Combine data - prefer non-empty values
-                merged_record = {}
-                for key in new_record.keys():
-                    existing_val = existing_record.get(key, '')
-                    new_val = new_record.get(key, '')
-                    
-                    # Special merge logic for key fields
-                    if key == 'is_contact':
-                        # If either source says it's a contact, it's a contact
-                        merged_record[key] = 'Yes' if (existing_val == 'Yes' or new_val == 'Yes') else 'No'
-                    elif key == 'has_chat':
-                        # If either source says it has chat, it has chat
-                        merged_record[key] = 'Yes' if (existing_val == 'Yes' or new_val == 'Yes') else 'No'
-                    elif key in ['phone', 'first_name', 'last_name']:
-                        # Prefer non-empty values, existing wins if both have values
-                        merged_record[key] = new_val if new_val else existing_val
-                    elif key in ['unread_count', 'last_message_date']:
-                        # Prefer newer/non-empty values for chat-related fields
-                        merged_record[key] = new_val if new_val else existing_val
-                    else:
-                        # Default: prefer new values
-                        merged_record[key] = new_val if new_val else existing_val
-                
+                merged_record = self.preserve_additional_columns(existing_record, new_record)
                 merged_records[user_id] = merged_record
             else:
                 # New record, add it

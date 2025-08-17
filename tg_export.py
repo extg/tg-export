@@ -93,7 +93,7 @@ async def export_chats(provider_manager: Optional[ProviderManager] = None):
                     'is_bot': 'Yes' if getattr(entity, 'bot', False) else 'No',
                     'has_chat': 'Yes',
                     'unread_count': dialog.unread_count,
-                    'last_message_date': dialog.date.isoformat() if dialog.date else ''
+                    'last_message_date': dialog.date.strftime("%Y-%m-%d %H:%M:%S") if dialog.date else ''
                 }
                 user_chat_records.append(user_record)
     
