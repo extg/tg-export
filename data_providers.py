@@ -53,9 +53,67 @@ class DataProvider(ABC):
         """Set last synchronization time"""
         self.last_sync_time = sync_time
     
+    def _has_data_changed(self, existing_record: dict, new_record: dict) -> bool:
+        """Check if any data field (except id and last_updated) has changed"""
+        # Fields to compare (all except id and last_updated)
+        comparable_fields = self.standard_columns - {'id', 'last_updated'}
+        
+        for field in comparable_fields:
+            existing_val = str(existing_record.get(field, '')).strip()
+            new_val = str(new_record.get(field, '')).strip()
+            
+            # Normalize empty values for comparison
+            existing_val = existing_val if existing_val else ''
+            new_val = new_val if new_val else ''
+            
+            # Special normalization for phone numbers
+            if field == 'phone':
+                # Remove + prefix and non-digits for comparison
+                existing_val = ''.join(filter(str.isdigit, existing_val))
+                new_val = ''.join(filter(str.isdigit, new_val))
+            
+            # Special logic for fields that prefer non-empty new values
+            if field in ['unread_count', 'last_message_date']:
+                # For these fields, check if the effective value would change
+                # (same logic as in preserve_additional_columns)
+                effective_old = existing_val
+                effective_new = new_val if new_val else existing_val
+                
+                if effective_old != effective_new:
+                    return True
+            else:
+                # Regular comparison for other fields
+                if existing_val != new_val:
+                    return True
+        
+        # Also check for any additional fields that might be in either record
+        all_fields = set(existing_record.keys()) | set(new_record.keys())
+        for field in all_fields:
+            if field in {'id', 'last_updated'} or field in comparable_fields:
+                continue  # Skip already processed fields
+                
+            existing_val = str(existing_record.get(field, '')).strip()
+            new_val = str(new_record.get(field, '')).strip()
+            
+            # Normalize empty values for comparison
+            existing_val = existing_val if existing_val else ''
+            new_val = new_val if new_val else ''
+            
+            if existing_val != new_val:
+                return True
+                
+        return False
+
     def preserve_additional_columns(self, existing_record: dict, new_record: dict) -> dict:
         """Preserve additional columns that are not part of standard Telegram export"""
         merged_record = existing_record.copy()
+        
+        # Check if data has actually changed
+        data_changed = self._has_data_changed(existing_record, new_record)
+        
+        # Update last_updated if data has changed (do this first)
+        if data_changed:
+            merged_record['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Update with new data based on column type
         for key, new_val in new_record.items():
@@ -75,8 +133,8 @@ class DataProvider(ABC):
                 # Prefer newer/non-empty values for chat-related fields
                 merged_record[key] = new_val if new_val else existing_val
             elif key == 'last_updated':
-                # Always update timestamp
-                merged_record[key] = new_val
+                # Skip - already handled above
+                pass
             elif key in self.standard_columns:
                 # For other standard fields - prefer new values if they exist
                 merged_record[key] = new_val if new_val else existing_val
@@ -130,9 +188,16 @@ class CSVDataProvider(DataProvider):
             # Ensure directory exists
             os.makedirs(os.path.dirname(self.csv_path) if os.path.dirname(self.csv_path) else '.', exist_ok=True)
             
-            # Add/update last_updated timestamp
+            # Ensure last_updated column exists for new records
             data = data.copy()
-            data['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if 'last_updated' not in data.columns:
+                data['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                # Fill empty last_updated values for new records
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                data['last_updated'] = data['last_updated'].fillna(current_time)
+                # Replace empty strings with current time
+                data.loc[data['last_updated'] == '', 'last_updated'] = current_time
             
             # Write to CSV
             data.to_csv(self.csv_path, index=False, encoding=self.encoding)
@@ -149,6 +214,9 @@ class CSVDataProvider(DataProvider):
         existing_data = self.read_data()
         
         if existing_data.empty:
+            # For new data, ensure last_updated is set to current time
+            new_data = new_data.copy()
+            new_data['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             return new_data
         
         # Convert id columns to string for consistent comparison
@@ -174,7 +242,8 @@ class CSVDataProvider(DataProvider):
                 merged_record = self.preserve_additional_columns(existing_record, new_record)
                 merged_records[user_id] = merged_record
             else:
-                # New record, add it
+                # New record, add it with current timestamp
+                new_record['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 merged_records[user_id] = new_record
         
         # Convert back to DataFrame
@@ -294,9 +363,16 @@ class GoogleSheetsProvider(DataProvider):
         try:
             service = self._get_sheets_service()
             
-            # Add/update last_updated timestamp
+            # Ensure last_updated column exists for new records
             data = data.copy()
-            data['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if 'last_updated' not in data.columns:
+                data['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                # Fill empty last_updated values for new records
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                data['last_updated'] = data['last_updated'].fillna(current_time)
+                # Replace empty strings with current time
+                data.loc[data['last_updated'] == '', 'last_updated'] = current_time
             
             # Prepare data for Google Sheets
             values = [data.columns.tolist()] + data.fillna('').astype(str).values.tolist()
@@ -333,6 +409,9 @@ class GoogleSheetsProvider(DataProvider):
         existing_data = self.read_data()
         
         if existing_data.empty:
+            # For new data, ensure last_updated is set to current time
+            new_data = new_data.copy()
+            new_data['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             return new_data
         
         # Convert id columns to string for consistent comparison
@@ -358,7 +437,8 @@ class GoogleSheetsProvider(DataProvider):
                 merged_record = self.preserve_additional_columns(existing_record, new_record)
                 merged_records[user_id] = merged_record
             else:
-                # New record, add it
+                # New record, add it with current timestamp
+                new_record['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 merged_records[user_id] = new_record
         
         # Convert back to DataFrame
