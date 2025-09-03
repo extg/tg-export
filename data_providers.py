@@ -375,7 +375,7 @@ class GoogleSheetsProvider(DataProvider):
                 data.loc[data['last_updated'] == '', 'last_updated'] = current_time
             
             # Prepare data for Google Sheets
-            values = [data.columns.tolist()] + data.fillna('').astype(str).values.tolist()
+            values = self._prepare_data_with_hyperlinks(data)
             
             # Clear existing data and write new data
             # First, clear the sheet
@@ -384,7 +384,7 @@ class GoogleSheetsProvider(DataProvider):
                 range=f"{self.sheet_name}!A:Z"
             ).execute()
             
-            # Then write new data
+            # Then write new data with USER_ENTERED option for formulas
             body = {
                 'values': values
             }
@@ -392,7 +392,7 @@ class GoogleSheetsProvider(DataProvider):
             result = service.spreadsheets().values().update(
                 spreadsheetId=self.spreadsheet_id,
                 range=f"{self.sheet_name}!A1",
-                valueInputOption='RAW',
+                valueInputOption='USER_ENTERED',  # Changed to parse formulas
                 body=body
             ).execute()
             
@@ -462,6 +462,53 @@ class GoogleSheetsProvider(DataProvider):
         except Exception as e:
             print(f"Google Sheets provider not available: {e}")
             return False
+    
+    def _prepare_data_with_hyperlinks(self, data: pd.DataFrame) -> list:
+        """
+        Prepare data for Google Sheets with HYPERLINK formulas for username column
+        """
+        # Get column headers
+        headers = data.columns.tolist()
+        username_col_index = None
+        
+        # Find the username column index
+        if 'username' in headers:
+            username_col_index = headers.index('username')
+        
+        # Start with headers
+        values = [headers]
+        
+        # Process each row
+        for _, row in data.iterrows():
+            row_values = []
+            for col_index, (col_name, cell_value) in enumerate(zip(headers, row.values)):
+                # Convert to string and handle NaN values
+                cell_str = str(cell_value) if pd.notna(cell_value) and cell_value != '' else ''
+                
+                # Special handling for username column
+                if col_index == username_col_index and cell_str and cell_str != 'nan':
+                    # Create HYPERLINK formula for Telegram profile
+                    if cell_str.startswith('@'):
+                        # Remove @ if present
+                        username_clean = cell_str[1:]
+                    else:
+                        username_clean = cell_str
+                    
+                    # Only create hyperlink for valid usernames (not empty, not just numbers)
+                    if username_clean and not username_clean.isdigit():
+                        telegram_url = f"https://t.me/{username_clean}"
+                        # Create HYPERLINK formula: =HYPERLINK("url", "display_text")
+                        hyperlink_formula = f'=HYPERLINK("{telegram_url}","{cell_str}")'
+                        row_values.append(hyperlink_formula)
+                    else:
+                        # If username is invalid, just use the original value
+                        row_values.append(cell_str)
+                else:
+                    row_values.append(cell_str)
+            
+            values.append(row_values)
+        
+        return values
 
 
 def create_provider(provider_type: str, config: Dict[str, Any]) -> DataProvider:
