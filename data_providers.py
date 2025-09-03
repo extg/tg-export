@@ -57,51 +57,79 @@ class DataProvider(ABC):
         """Check if any data field (except id and last_updated) has changed"""
         # Fields to compare (all except id and last_updated)
         comparable_fields = self.standard_columns - {'id', 'last_updated'}
-        
+
         for field in comparable_fields:
             existing_val = str(existing_record.get(field, '')).strip()
             new_val = str(new_record.get(field, '')).strip()
-            
+
             # Normalize empty values for comparison
             existing_val = existing_val if existing_val else ''
             new_val = new_val if new_val else ''
-            
+
             # Special normalization for phone numbers
             if field == 'phone':
                 # Remove + prefix and non-digits for comparison
                 existing_val = ''.join(filter(str.isdigit, existing_val))
                 new_val = ''.join(filter(str.isdigit, new_val))
-            
+
             # Special logic for fields that prefer non-empty new values
             if field in ['unread_count', 'last_message_date']:
                 # For these fields, check if the effective value would change
                 # (same logic as in preserve_additional_columns)
                 effective_old = existing_val
                 effective_new = new_val if new_val else existing_val
-                
+
+                # Special handling for date formatting (leading zeros)
+                if field == 'last_message_date' and effective_old and effective_new:
+                    # Normalize date formats for comparison (remove leading zeros from hours)
+                    import re
+                    old_normalized = re.sub(r'(\d{4}-\d{2}-\d{2} )\b0(\d):', r'\1\2:', effective_old)
+                    new_normalized = re.sub(r'(\d{4}-\d{2}-\d{2} )\b0(\d):', r'\1\2:', effective_new)
+                    if old_normalized == new_normalized:
+                        continue  # Same date, just different formatting
+
                 if effective_old != effective_new:
+                    print(f"DEBUG: Field '{field}' changed: '{effective_old}' -> '{effective_new}'")
                     return True
+            elif field == 'is_contact':
+                # Special logic for is_contact field
+                # This field is merged using OR logic, so individual source changes shouldn't count
+                # as "data changes" since they represent different data sources, not actual data changes
+                continue  # Skip is_contact changes - they don't represent actual data modifications
             else:
                 # Regular comparison for other fields
-                if existing_val != new_val:
+                # IMPORTANT FIX: Don't count empty new values as changes when existing value exists
+                # Only count as change if:
+                # 1. New value is non-empty AND different from existing
+                # 2. OR both values are non-empty and different
+                if new_val and existing_val != new_val:
+                    print(f"DEBUG: Field '{field}' changed: '{existing_val}' -> '{new_val}'")
                     return True
-        
+                elif existing_val and not new_val:
+                    # This case should NOT trigger change - empty new value doesn't overwrite existing
+                    continue
+
         # Also check for any additional fields that might be in either record
         all_fields = set(existing_record.keys()) | set(new_record.keys())
         for field in all_fields:
             if field in {'id', 'last_updated'} or field in comparable_fields:
                 continue  # Skip already processed fields
-                
+
             existing_val = str(existing_record.get(field, '')).strip()
             new_val = str(new_record.get(field, '')).strip()
-            
+
             # Normalize empty values for comparison
             existing_val = existing_val if existing_val else ''
             new_val = new_val if new_val else ''
-            
-            if existing_val != new_val:
+
+            # Same logic for additional fields
+            if field == 'is_contact':
+                # Skip is_contact changes for additional fields too
+                continue
+            elif new_val and existing_val != new_val:
+                print(f"DEBUG: Additional field '{field}' changed: '{existing_val}' -> '{new_val}'")
                 return True
-                
+
         return False
 
     def preserve_additional_columns(self, existing_record: dict, new_record: dict) -> dict:
