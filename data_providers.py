@@ -301,6 +301,12 @@ class GoogleSheetsProvider(DataProvider):
         self.service_account_path = config.get('service_account_path', 'service_account.json')
         self.service_account_info = config.get('service_account_info')  # For env vars/secrets
         
+        # Backup settings
+        self.backup_enabled = config.get('backup_enabled', True)
+        self.backup_spreadsheet_id = config.get('backup_spreadsheet_id')  # Optional: separate spreadsheet for backups
+        self.backup_keep_count = config.get('backup_keep_count', 3)  # Number of backups to keep
+        self.backup_auto_cleanup = config.get('backup_auto_cleanup', True)  # Auto cleanup old backups
+        
         self._sheets_service = None
     
     def _get_sheets_service(self):
@@ -386,9 +392,231 @@ class GoogleSheetsProvider(DataProvider):
             print(f"Error reading from Google Sheets: {e}")
             return pd.DataFrame()
     
-    def write_data(self, data: pd.DataFrame) -> bool:
-        """Write data to Google Sheets"""
+    def create_backup_sheet(self, backup_suffix: str = None) -> Optional[str]:
+        """Create a backup copy of the current sheet within the same spreadsheet
+        
+        Args:
+            backup_suffix: Optional suffix for backup sheet name (default: timestamp with minute precision)
+            
+        Returns:
+            Name of created backup sheet or None if failed
+        """
         try:
+            service = self._get_sheets_service()
+            
+            # Get current sheet info to find sheet ID and existing sheets
+            spreadsheet = service.spreadsheets().get(spreadsheetId=self.spreadsheet_id).execute()
+            sheet_id = None
+            existing_sheet_names = set()
+            
+            for sheet in spreadsheet['sheets']:
+                sheet_title = sheet['properties']['title']
+                existing_sheet_names.add(sheet_title)
+                if sheet_title == self.sheet_name:
+                    sheet_id = sheet['properties']['sheetId']
+            
+            if sheet_id is None:
+                print(f"Sheet '{self.sheet_name}' not found!")
+                return None
+            
+            # Generate backup name with minute precision
+            if backup_suffix is None:
+                backup_suffix = datetime.now().strftime("%Y%m%d_%H%M")  # Only to minute precision
+            backup_name = f"{self.sheet_name}_backup_{backup_suffix}"
+            
+            # Check if backup with this name already exists
+            if backup_name in existing_sheet_names:
+                print(f"✓ Backup sheet '{backup_name}' already exists, skipping creation")
+                return backup_name
+            
+            # Create duplicate sheet request
+            duplicate_request = {
+                'requests': [{
+                    'duplicateSheet': {
+                        'sourceSheetId': sheet_id,
+                        'insertSheetIndex': 0,  # Insert at beginning
+                        'newSheetName': backup_name
+                    }
+                }]
+            }
+            
+            # Execute the duplication
+            result = service.spreadsheets().batchUpdate(
+                spreadsheetId=self.spreadsheet_id,
+                body=duplicate_request
+            ).execute()
+            
+            print(f"✓ Created backup sheet: '{backup_name}'")
+            
+            # Auto cleanup old backups if enabled
+            if self.backup_auto_cleanup:
+                deleted_count = self.cleanup_old_backups(self.backup_keep_count)
+                if deleted_count > 0:
+                    print(f"✓ Auto-cleaned {deleted_count} old backup sheets")
+            
+            return backup_name
+            
+        except Exception as e:
+            print(f"Error creating backup sheet: {e}")
+            return None
+    
+    def cleanup_old_backups(self, keep_count: int = 5) -> int:
+        """Clean up old backup sheets, keeping only the most recent ones
+        
+        Args:
+            keep_count: Number of recent backups to keep (default: 5)
+            
+        Returns:
+            Number of backup sheets deleted
+        """
+        try:
+            service = self._get_sheets_service()
+            
+            # Get all sheets in the spreadsheet
+            spreadsheet = service.spreadsheets().get(spreadsheetId=self.spreadsheet_id).execute()
+            
+            # Find backup sheets for this sheet
+            backup_prefix = f"{self.sheet_name}_backup_"
+            backup_sheets = []
+            
+            for sheet in spreadsheet['sheets']:
+                sheet_title = sheet['properties']['title']
+                if sheet_title.startswith(backup_prefix):
+                    # Extract timestamp from backup name
+                    try:
+                        timestamp_str = sheet_title[len(backup_prefix):]
+                        # Parse timestamp (format: YYYYMMDD_HHMM)
+                        timestamp = datetime.strptime(timestamp_str, "%Y%m%d_%H%M")
+                        backup_sheets.append({
+                            'name': sheet_title,
+                            'id': sheet['properties']['sheetId'],
+                            'timestamp': timestamp
+                        })
+                    except ValueError:
+                        # Skip sheets with invalid timestamp format
+                        continue
+            
+            # Sort by timestamp (newest first)
+            backup_sheets.sort(key=lambda x: x['timestamp'], reverse=True)
+            
+            # Keep only the specified number of backups
+            sheets_to_delete = backup_sheets[keep_count:]
+            
+            if not sheets_to_delete:
+                print(f"✓ No old backup sheets to clean up (found {len(backup_sheets)} backups)")
+                return 0
+            
+            # Delete old backup sheets
+            delete_requests = []
+            for sheet_info in sheets_to_delete:
+                delete_requests.append({
+                    'deleteSheet': {
+                        'sheetId': sheet_info['id']
+                    }
+                })
+            
+            if delete_requests:
+                batch_request = {'requests': delete_requests}
+                service.spreadsheets().batchUpdate(
+                    spreadsheetId=self.spreadsheet_id,
+                    body=batch_request
+                ).execute()
+                
+                deleted_names = [s['name'] for s in sheets_to_delete]
+                print(f"✓ Deleted {len(sheets_to_delete)} old backup sheets: {', '.join(deleted_names)}")
+            
+            return len(sheets_to_delete)
+            
+        except Exception as e:
+            print(f"Error cleaning up old backup sheets: {e}")
+            return 0
+    
+    def copy_sheet_to_spreadsheet(self, destination_spreadsheet_id: str, 
+                                  new_sheet_name: str = None) -> bool:
+        """Copy current sheet to another spreadsheet
+        
+        Args:
+            destination_spreadsheet_id: ID of destination spreadsheet
+            new_sheet_name: Name for the sheet in destination (optional)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            service = self._get_sheets_service()
+            
+            # Get current sheet info to find sheet ID
+            spreadsheet = service.spreadsheets().get(spreadsheetId=self.spreadsheet_id).execute()
+            sheet_id = None
+            
+            for sheet in spreadsheet['sheets']:
+                if sheet['properties']['title'] == self.sheet_name:
+                    sheet_id = sheet['properties']['sheetId']
+                    break
+            
+            if sheet_id is None:
+                print(f"Sheet '{self.sheet_name}' not found!")
+                return False
+            
+            # Copy sheet to destination spreadsheet
+            copy_request = {
+                'destinationSpreadsheetId': destination_spreadsheet_id
+            }
+            
+            result = service.spreadsheets().sheets().copyTo(
+                spreadsheetId=self.spreadsheet_id,
+                sheetId=sheet_id,
+                body=copy_request
+            ).execute()
+            
+            copied_sheet_id = result['sheetId']
+            
+            # Rename the copied sheet if new name provided
+            if new_sheet_name:
+                rename_request = {
+                    'requests': [{
+                        'updateSheetProperties': {
+                            'properties': {
+                                'sheetId': copied_sheet_id,
+                                'title': new_sheet_name
+                            },
+                            'fields': 'title'
+                        }
+                    }]
+                }
+                
+                service.spreadsheets().batchUpdate(
+                    spreadsheetId=destination_spreadsheet_id,
+                    body=rename_request
+                ).execute()
+                
+                print(f"✓ Sheet copied to destination spreadsheet as '{new_sheet_name}'")
+            else:
+                print(f"✓ Sheet copied to destination spreadsheet")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error copying sheet to destination: {e}")
+            return False
+    
+    def write_data(self, data: pd.DataFrame, create_backup: bool = None) -> bool:
+        """Write data to Google Sheets with optional backup creation
+        
+        Args:
+            data: DataFrame to write
+            create_backup: Whether to create backup before writing (None=use config default)
+        """
+        try:
+            # Create backup if requested (use config default if not specified)
+            should_backup = create_backup if create_backup is not None else self.backup_enabled
+            if should_backup:
+                backup_name = self.create_backup_sheet()
+                if backup_name:
+                    print(f"✓ Backup created: {backup_name}")
+                else:
+                    print("⚠ Could not create backup, continuing anyway...")
+            
             service = self._get_sheets_service()
             
             # Ensure last_updated column exists for new records
@@ -432,8 +660,22 @@ class GoogleSheetsProvider(DataProvider):
             print(f"Error writing to Google Sheets: {e}")
             return False
     
-    def sync_data(self, new_data: pd.DataFrame) -> pd.DataFrame:
-        """Synchronize new data with existing Google Sheets data with smart merging"""
+    def sync_data(self, new_data: pd.DataFrame, create_backup: bool = None) -> pd.DataFrame:
+        """Synchronize new data with existing Google Sheets data with smart merging
+        
+        Args:
+            new_data: New data to sync
+            create_backup: Whether to create backup before syncing (None=use config default)
+        """
+        # Create backup before syncing if requested (use config default if not specified)
+        should_backup = create_backup if create_backup is not None else self.backup_enabled
+        if should_backup:
+            backup_name = self.create_backup_sheet()
+            if backup_name:
+                print(f"✓ Backup created before sync: {backup_name}")
+            else:
+                print("⚠ Could not create backup before sync, continuing anyway...")
+        
         existing_data = self.read_data()
         
         if existing_data.empty:
