@@ -406,11 +406,12 @@ class GoogleSheetsProvider(DataProvider):
             print(f"[{self.__class__.__name__}]: Error reading from Google Sheets: {e}")
             return pd.DataFrame()
     
-    def create_backup_sheet(self, backup_suffix: str = None) -> Optional[str]:
+    def create_backup_sheet(self, backup_suffix: str = None, silent_if_exists: bool = False) -> Optional[str]:
         """Create a backup copy of the current sheet within the same spreadsheet
         
         Args:
             backup_suffix: Optional suffix for backup sheet name (default: timestamp with minute precision)
+            silent_if_exists: If True, don't log when backup already exists
             
         Returns:
             Name of created backup sheet or None if failed
@@ -440,7 +441,8 @@ class GoogleSheetsProvider(DataProvider):
             
             # Check if backup with this name already exists
             if backup_name in existing_sheet_names:
-                print(f"[{self.__class__.__name__}]: ✓ Backup sheet '{backup_name}' already exists, skipping creation")
+                if not silent_if_exists:
+                    print(f"[{self.__class__.__name__}]: ✓ Backup sheet '{backup_name}' already exists, skipping creation")
                 return backup_name
             
             # Create duplicate sheet request
@@ -625,10 +627,8 @@ class GoogleSheetsProvider(DataProvider):
             # Create backup if requested (use config default if not specified)
             should_backup = create_backup if create_backup is not None else self.backup_enabled
             if should_backup:
-                backup_name = self.create_backup_sheet()
-                if backup_name:
-                    print(f"[{self.__class__.__name__}]: ✓ Backup created: {backup_name}")
-                else:
+                backup_name = self.create_backup_sheet(silent_if_exists=True)
+                if not backup_name:
                     print(f"[{self.__class__.__name__}]: ⚠ Could not create backup, continuing anyway...")
             
             service = self._get_sheets_service()
@@ -685,9 +685,7 @@ class GoogleSheetsProvider(DataProvider):
         should_backup = create_backup if create_backup is not None else self.backup_enabled
         if should_backup:
             backup_name = self.create_backup_sheet()
-            if backup_name:
-                print(f"[{self.__class__.__name__}]: ✓ Backup created before sync: {backup_name}")
-            else:
+            if not backup_name:
                 print(f"[{self.__class__.__name__}]: ⚠ Could not create backup before sync, continuing anyway...")
         
         existing_data = self.read_data()
@@ -891,7 +889,9 @@ class ProviderManager:
                 # Use provider's sync logic for deduplication
                 synced_data = provider.sync_data(df)
                 if provider.write_data(synced_data):
-                    print(f"[{self.__class__.__name__}]: Synced {len(records)} records to {provider.__class__.__name__}")
+                    # Only log individual provider sync for debugging or if there are multiple providers
+                    if len(self.providers) > 1:
+                        print(f"[{self.__class__.__name__}]: Synced {len(records)} records to {provider.__class__.__name__}")
                     success_count += 1
                 else:
                     print(f"[{self.__class__.__name__}]: Failed to write data to {provider.__class__.__name__}")
@@ -901,11 +901,11 @@ class ProviderManager:
         if success_count == 0:
             raise Exception("Failed to sync to any provider")
         
-        # Log completion summary
-        if success_count == len(self.providers):
-            print(f"[{self.__class__.__name__}]: ✓ Successfully synced {len(records)} records to all {len(self.providers)} provider(s)")
-        else:
+        # Log completion summary - only log if there are issues or multiple providers
+        if success_count != len(self.providers):
             print(f"[{self.__class__.__name__}]: ⚠ Partially synced {len(records)} records to {success_count}/{len(self.providers)} provider(s)")
+        elif len(self.providers) > 1:
+            print(f"[{self.__class__.__name__}]: ✓ Successfully synced {len(records)} records to all {len(self.providers)} provider(s)")
         
         return success_count == len(self.providers)
     
