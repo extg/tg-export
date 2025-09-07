@@ -55,6 +55,12 @@ class DataProvider(ABC):
     
     def _has_data_changed(self, existing_record: dict, new_record: dict) -> bool:
         """Check if any data field (except id and last_updated) has changed"""
+        # Get ID for debug messages
+        record_id = existing_record.get('id', new_record.get('id', 'unknown'))
+
+        if record_id == 'unknown':
+          raise ValueError("ID is unknown")
+        
         # Fields to compare (all except id and last_updated)
         comparable_fields = self.standard_columns - {'id', 'last_updated'}
 
@@ -89,7 +95,7 @@ class DataProvider(ABC):
                         continue  # Same date, just different formatting
 
                 if effective_old != effective_new:
-                    print(f"DEBUG: Field '{field}' changed: '{effective_old}' -> '{effective_new}'")
+                    print(f"DEBUG: ID {record_id} - Field '{field}' changed: '{effective_old}' -> '{effective_new}'")
                     return True
             elif field == 'is_contact':
                 # Special logic for is_contact field
@@ -103,7 +109,7 @@ class DataProvider(ABC):
                 # 1. New value is non-empty AND different from existing
                 # 2. OR both values are non-empty and different
                 if new_val and existing_val != new_val:
-                    print(f"DEBUG: Field '{field}' changed: '{existing_val}' -> '{new_val}'")
+                    print(f"DEBUG: ID {record_id} - Field '{field}' changed: '{existing_val}' -> '{new_val}'")
                     return True
                 elif existing_val and not new_val:
                     # This case should NOT trigger change - empty new value doesn't overwrite existing
@@ -127,7 +133,7 @@ class DataProvider(ABC):
                 # Skip is_contact changes for additional fields too
                 continue
             elif new_val and existing_val != new_val:
-                print(f"DEBUG: Additional field '{field}' changed: '{existing_val}' -> '{new_val}'")
+                print(f"DEBUG: ID {record_id} - Additional field '{field}' changed: '{existing_val}' -> '{new_val}'")
                 return True
 
         return False
