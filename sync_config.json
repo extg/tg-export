@@ -16,7 +16,7 @@
       "sheet_name": "Telegram Data",
       "service_account_path": "service_account.json",
       "backup_enabled": true,
-      "backup_keep_count": 3,
+      "backup_keep_count": 2,
       "backup_auto_cleanup": true,
       "backup_spreadsheet_id": "${BACKUP_SPREADSHEET_ID}"
     }
