@@ -839,6 +839,13 @@ class ProviderManager:
             
             for provider_config in config.get('providers', []):
                 try:
+                    # Check if provider is enabled (default to True if not specified)
+                    enabled = provider_config.get('enabled', True)
+                    if not enabled:
+                        provider_type = provider_config.get('type', 'unknown')
+                        print(f"Skipping disabled {provider_type} provider")
+                        continue
+                    
                     provider_type = provider_config.get('type')
                     if provider_type:
                         provider = create_provider(provider_type, provider_config)

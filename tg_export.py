@@ -141,7 +141,7 @@ async def main():
     """Main function with unified data collection and single sync"""
     print("Starting Telegram data export...")
     
-    provider_manager = ProviderManager()
+    provider_manager = ProviderManager('sync_config.json')
     
     await client.start(phone=PHONE_NUMBER)
     print("Successfully connected to Telegram!")
