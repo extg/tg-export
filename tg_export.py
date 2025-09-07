@@ -25,7 +25,7 @@ API_HASH = os.getenv('TG_API_HASH')
 PHONE_NUMBER = os.getenv('TG_PHONE_NUMBER')
 
 if not API_ID or not API_HASH or not PHONE_NUMBER:
-    print("Error: Set environment variables TG_API_ID, TG_API_HASH and TG_PHONE_NUMBER")
+    print("[Config]: Error: Set environment variables TG_API_ID, TG_API_HASH and TG_PHONE_NUMBER")
     exit(1)
 
 client = TelegramClient('session', API_ID, API_HASH)
@@ -38,7 +38,7 @@ os.makedirs(EXPORT_DIR, exist_ok=True)
 
 async def collect_contacts():
     """Collect contacts data without syncing"""
-    print("Collecting contacts...")
+    print("[Collect]: Collecting contacts...")
     # Use GetContactsRequest with hash=0 to get all contacts
     result = await client(functions.contacts.GetContactsRequest(hash=0))
     
@@ -60,12 +60,12 @@ async def collect_contacts():
         }
         contacts_data.append(contact_info)
     
-    print(f"Collected {len(contacts_data)} contacts")
+    print(f"[Collect]: Collected {len(contacts_data)} contacts")
     return contacts_data
 
 async def collect_chats():
     """Collect chats data without syncing"""
-    print("Collecting chats...")
+    print("[Collect]: Collecting chats...")
     dialogs = await client.get_dialogs()
     
     user_chat_records = []
@@ -92,12 +92,12 @@ async def collect_chats():
             }
             user_chat_records.append(user_record)
     
-    print(f"Collected {total_chats} chats ({len(user_chat_records)} user chats)")
+    print(f"[Collect]: Collected {total_chats} chats ({len(user_chat_records)} user chats)")
     return user_chat_records
 
 def merge_contacts_and_chats(contacts_data, chats_data):
     """Merge contacts and chats data into a single unified dataset"""
-    print("Merging contacts and chats data...")
+    print("[Merge]: Merging contacts and chats data...")
     
     # Create a dictionary for efficient lookup by user ID
     merged_records = {}
@@ -134,17 +134,17 @@ def merge_contacts_and_chats(contacts_data, chats_data):
     # Convert back to list
     merged_list = list(merged_records.values())
     
-    print(f"Merged data: {len(merged_list)} total records ({len(contacts_data)} contacts, {len(chats_data)} chats)")
+    print(f"[Merge]: Merged data: {len(merged_list)} total records ({len(contacts_data)} contacts, {len(chats_data)} chats)")
     return merged_list
 
 async def main():
     """Main function with unified data collection and single sync"""
-    print("Starting Telegram data export...")
+    print("[Main]: Starting Telegram data export...")
     
     provider_manager = ProviderManager('sync_config.json')
     
     await client.start(phone=PHONE_NUMBER)
-    print("Successfully connected to Telegram!")
+    print("[Main]: Successfully connected to Telegram!")
     
     try:
         # Step 1: Collect all data without syncing
@@ -155,17 +155,17 @@ async def main():
         merged_data = merge_contacts_and_chats(contacts_data, chats_data)
         
         # Step 3: Single final sync to all providers
-        print("Performing final data synchronization...")
+        print("[Main]: Performing final data synchronization...")
         if merged_data:
             provider_manager.sync_data(merged_data)
-            print(f"✓ Successfully synced {len(merged_data)} records to all providers")
+            print(f"[Main]: ✓ Successfully synced {len(merged_data)} records to all providers")
         else:
-            print("No data to sync")
+            print("[Main]: No data to sync")
         
-        print("Export completed successfully!")
+        print("[Main]: Export completed successfully!")
         
     except Exception as e:
-        print(f"Error during export: {e}")
+        print(f"[Main]: Error during export: {e}")
         raise
     
     finally:

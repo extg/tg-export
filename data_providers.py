@@ -95,7 +95,7 @@ class DataProvider(ABC):
                         continue  # Same date, just different formatting
 
                 if effective_old != effective_new:
-                    print(f"DEBUG: ID {record_id} - Field '{field}' changed: '{effective_old}' -> '{effective_new}'")
+                    print(f"[{self.__class__.__name__}]: DEBUG: ID {record_id} - Field '{field}' changed: '{effective_old}' -> '{effective_new}'")
                     return True
             elif field == 'is_contact':
                 # Special logic for is_contact field
@@ -109,7 +109,7 @@ class DataProvider(ABC):
                 # 1. New value is non-empty AND different from existing
                 # 2. OR both values are non-empty and different
                 if new_val and existing_val != new_val:
-                    print(f"DEBUG: ID {record_id} - Field '{field}' changed: '{existing_val}' -> '{new_val}'")
+                    print(f"[{self.__class__.__name__}]: DEBUG: ID {record_id} - Field '{field}' changed: '{existing_val}' -> '{new_val}'")
                     return True
                 elif existing_val and not new_val:
                     # This case should NOT trigger change - empty new value doesn't overwrite existing
@@ -133,7 +133,7 @@ class DataProvider(ABC):
                 # Skip is_contact changes for additional fields too
                 continue
             elif new_val and existing_val != new_val:
-                print(f"DEBUG: ID {record_id} - Additional field '{field}' changed: '{existing_val}' -> '{new_val}'")
+                print(f"[{self.__class__.__name__}]: DEBUG: ID {record_id} - Additional field '{field}' changed: '{existing_val}' -> '{new_val}'")
                 return True
 
         return False
@@ -207,7 +207,7 @@ class CSVDataProvider(DataProvider):
                 df['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             return df
         except Exception as e:
-            print(f"Error reading CSV file {self.csv_path}: {e}")
+            print(f"[{self.__class__.__name__}]: Error reading CSV file {self.csv_path}: {e}")
             return pd.DataFrame()
     
     def write_data(self, data: pd.DataFrame) -> bool:
@@ -217,7 +217,7 @@ class CSVDataProvider(DataProvider):
             if self.backup_enabled and os.path.exists(self.csv_path):
                 backup_path = f"{self.csv_path}.backup_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
                 os.rename(self.csv_path, backup_path)
-                print(f"Created backup: {backup_path}")
+                print(f"[{self.__class__.__name__}]: Created backup: {backup_path}")
             
             # Ensure directory exists
             os.makedirs(os.path.dirname(self.csv_path) if os.path.dirname(self.csv_path) else '.', exist_ok=True)
@@ -236,11 +236,11 @@ class CSVDataProvider(DataProvider):
             # Write to CSV
             data.to_csv(self.csv_path, index=False, encoding=self.encoding)
             self.set_last_sync_time(datetime.now())
-            print(f"Data written to CSV: {self.csv_path}")
+            print(f"[{self.__class__.__name__}]: Data written to CSV: {self.csv_path}")
             return True
             
         except Exception as e:
-            print(f"Error writing to CSV file {self.csv_path}: {e}")
+            print(f"[{self.__class__.__name__}]: Error writing to CSV file {self.csv_path}: {e}")
             return False
     
     def sync_data(self, new_data: pd.DataFrame) -> pd.DataFrame:
@@ -395,7 +395,7 @@ class GoogleSheetsProvider(DataProvider):
             return df
             
         except Exception as e:
-            print(f"Error reading from Google Sheets: {e}")
+            print(f"[{self.__class__.__name__}]: Error reading from Google Sheets: {e}")
             return pd.DataFrame()
     
     def create_backup_sheet(self, backup_suffix: str = None) -> Optional[str]:
@@ -422,7 +422,7 @@ class GoogleSheetsProvider(DataProvider):
                     sheet_id = sheet['properties']['sheetId']
             
             if sheet_id is None:
-                print(f"Sheet '{self.sheet_name}' not found!")
+                print(f"[{self.__class__.__name__}]: Sheet '{self.sheet_name}' not found!")
                 return None
             
             # Generate backup name with minute precision
@@ -432,7 +432,7 @@ class GoogleSheetsProvider(DataProvider):
             
             # Check if backup with this name already exists
             if backup_name in existing_sheet_names:
-                print(f"✓ Backup sheet '{backup_name}' already exists, skipping creation")
+                print(f"[{self.__class__.__name__}]: ✓ Backup sheet '{backup_name}' already exists, skipping creation")
                 return backup_name
             
             # Create duplicate sheet request
@@ -452,18 +452,18 @@ class GoogleSheetsProvider(DataProvider):
                 body=duplicate_request
             ).execute()
             
-            print(f"✓ Created backup sheet: '{backup_name}'")
+            print(f"[{self.__class__.__name__}]: ✓ Created backup sheet: '{backup_name}'")
             
             # Auto cleanup old backups if enabled
             if self.backup_auto_cleanup:
                 deleted_count = self.cleanup_old_backups(self.backup_keep_count)
                 if deleted_count > 0:
-                    print(f"✓ Auto-cleaned {deleted_count} old backup sheets")
+                    print(f"[{self.__class__.__name__}]: ✓ Auto-cleaned {deleted_count} old backup sheets")
             
             return backup_name
             
         except Exception as e:
-            print(f"Error creating backup sheet: {e}")
+            print(f"[{self.__class__.__name__}]: Error creating backup sheet: {e}")
             return None
     
     def cleanup_old_backups(self, keep_count: int = 5) -> int:
@@ -509,7 +509,7 @@ class GoogleSheetsProvider(DataProvider):
             sheets_to_delete = backup_sheets[keep_count:]
             
             if not sheets_to_delete:
-                print(f"✓ No old backup sheets to clean up (found {len(backup_sheets)} backups)")
+                print(f"[{self.__class__.__name__}]: ✓ No old backup sheets to clean up (found {len(backup_sheets)} backups)")
                 return 0
             
             # Delete old backup sheets
@@ -529,12 +529,12 @@ class GoogleSheetsProvider(DataProvider):
                 ).execute()
                 
                 deleted_names = [s['name'] for s in sheets_to_delete]
-                print(f"✓ Deleted {len(sheets_to_delete)} old backup sheets: {', '.join(deleted_names)}")
+                print(f"[{self.__class__.__name__}]: ✓ Deleted {len(sheets_to_delete)} old backup sheets: {', '.join(deleted_names)}")
             
             return len(sheets_to_delete)
             
         except Exception as e:
-            print(f"Error cleaning up old backup sheets: {e}")
+            print(f"[{self.__class__.__name__}]: Error cleaning up old backup sheets: {e}")
             return 0
     
     def copy_sheet_to_spreadsheet(self, destination_spreadsheet_id: str, 
@@ -561,7 +561,7 @@ class GoogleSheetsProvider(DataProvider):
                     break
             
             if sheet_id is None:
-                print(f"Sheet '{self.sheet_name}' not found!")
+                print(f"[{self.__class__.__name__}]: Sheet '{self.sheet_name}' not found!")
                 return False
             
             # Copy sheet to destination spreadsheet
@@ -596,14 +596,14 @@ class GoogleSheetsProvider(DataProvider):
                     body=rename_request
                 ).execute()
                 
-                print(f"✓ Sheet copied to destination spreadsheet as '{new_sheet_name}'")
+                print(f"[{self.__class__.__name__}]: ✓ Sheet copied to destination spreadsheet as '{new_sheet_name}'")
             else:
-                print(f"✓ Sheet copied to destination spreadsheet")
+                print(f"[{self.__class__.__name__}]: ✓ Sheet copied to destination spreadsheet")
             
             return True
             
         except Exception as e:
-            print(f"Error copying sheet to destination: {e}")
+            print(f"[{self.__class__.__name__}]: Error copying sheet to destination: {e}")
             return False
     
     def write_data(self, data: pd.DataFrame, create_backup: bool = None) -> bool:
@@ -619,9 +619,9 @@ class GoogleSheetsProvider(DataProvider):
             if should_backup:
                 backup_name = self.create_backup_sheet()
                 if backup_name:
-                    print(f"✓ Backup created: {backup_name}")
+                    print(f"[{self.__class__.__name__}]: ✓ Backup created: {backup_name}")
                 else:
-                    print("⚠ Could not create backup, continuing anyway...")
+                    print(f"[{self.__class__.__name__}]: ⚠ Could not create backup, continuing anyway...")
             
             service = self._get_sheets_service()
             
@@ -659,11 +659,11 @@ class GoogleSheetsProvider(DataProvider):
             ).execute()
             
             self.set_last_sync_time(datetime.now())
-            print(f"Data written to Google Sheets. Updated {result.get('updatedCells', 0)} cells.")
+            print(f"[{self.__class__.__name__}]: Data written to Google Sheets. Updated {result.get('updatedCells', 0)} cells.")
             return True
             
         except Exception as e:
-            print(f"Error writing to Google Sheets: {e}")
+            print(f"[{self.__class__.__name__}]: Error writing to Google Sheets: {e}")
             return False
     
     def sync_data(self, new_data: pd.DataFrame, create_backup: bool = None) -> pd.DataFrame:
@@ -678,9 +678,9 @@ class GoogleSheetsProvider(DataProvider):
         if should_backup:
             backup_name = self.create_backup_sheet()
             if backup_name:
-                print(f"✓ Backup created before sync: {backup_name}")
+                print(f"[{self.__class__.__name__}]: ✓ Backup created before sync: {backup_name}")
             else:
-                print("⚠ Could not create backup before sync, continuing anyway...")
+                print(f"[{self.__class__.__name__}]: ⚠ Could not create backup before sync, continuing anyway...")
         
         existing_data = self.read_data()
         
@@ -736,7 +736,7 @@ class GoogleSheetsProvider(DataProvider):
             return True
             
         except Exception as e:
-            print(f"Google Sheets provider not available: {e}")
+            print(f"[{self.__class__.__name__}]: Google Sheets provider not available: {e}")
             return False
     
     def _prepare_data_with_hyperlinks(self, data: pd.DataFrame) -> list:
@@ -843,7 +843,7 @@ class ProviderManager:
                     enabled = provider_config.get('enabled', True)
                     if not enabled:
                         provider_type = provider_config.get('type', 'unknown')
-                        print(f"Skipping disabled {provider_type} provider")
+                        print(f"[{self.__class__.__name__}]: Skipping disabled {provider_type} provider")
                         continue
                     
                     provider_type = provider_config.get('type')
@@ -851,11 +851,11 @@ class ProviderManager:
                         provider = create_provider(provider_type, provider_config)
                         if provider.is_available():
                             self.providers.append(provider)
-                            print(f"Initialized {provider_type} provider")
+                            print(f"[{self.__class__.__name__}]: Initialized {provider_type} provider")
                         else:
                             raise Exception(f"{provider_type} provider not available")
                 except Exception as e:
-                    print(f"Error initializing provider {provider_config}: {e}")
+                    print(f"[{self.__class__.__name__}]: Error initializing provider {provider_config}: {e}")
                     raise
                     
         except Exception as e:
@@ -865,12 +865,12 @@ class ProviderManager:
             raise Exception("No providers could be initialized")
         
         provider_names = [provider.__class__.__name__ for provider in self.providers]
-        print(f"Successfully loaded {len(self.providers)} provider(s): {', '.join(provider_names)}")
+        print(f"[{self.__class__.__name__}]: Successfully loaded {len(self.providers)} provider(s): {', '.join(provider_names)}")
     
     def sync_data(self, records: List[dict]) -> bool:
         """Sync records to all providers using their deduplication logic"""
         if not records:
-            print("No records to sync")
+            print(f"[{self.__class__.__name__}]: No records to sync")
             return True
         
         # Convert records to DataFrame
@@ -883,21 +883,21 @@ class ProviderManager:
                 # Use provider's sync logic for deduplication
                 synced_data = provider.sync_data(df)
                 if provider.write_data(synced_data):
-                    print(f"Synced {len(records)} records to {provider.__class__.__name__}")
+                    print(f"[{self.__class__.__name__}]: Synced {len(records)} records to {provider.__class__.__name__}")
                     success_count += 1
                 else:
-                    print(f"Failed to write data to {provider.__class__.__name__}")
+                    print(f"[{self.__class__.__name__}]: Failed to write data to {provider.__class__.__name__}")
             except Exception as e:
-                print(f"Error syncing to {provider.__class__.__name__}: {e}")
+                print(f"[{self.__class__.__name__}]: Error syncing to {provider.__class__.__name__}: {e}")
         
         if success_count == 0:
             raise Exception("Failed to sync to any provider")
         
         # Log completion summary
         if success_count == len(self.providers):
-            print(f"✓ Successfully synced {len(records)} records to all {len(self.providers)} provider(s)")
+            print(f"[{self.__class__.__name__}]: ✓ Successfully synced {len(records)} records to all {len(self.providers)} provider(s)")
         else:
-            print(f"⚠ Partially synced {len(records)} records to {success_count}/{len(self.providers)} provider(s)")
+            print(f"[{self.__class__.__name__}]: ⚠ Partially synced {len(records)} records to {success_count}/{len(self.providers)} provider(s)")
         
         return success_count == len(self.providers)
     

@@ -15,17 +15,17 @@ def check_env_file() -> bool:
     env_path = '.env'
     
     if not os.path.exists(env_path):
-        print(f"❌ {env_path} file not found!")
-        print("Please create .env file from .env.example and set SPREADSHEET_ID")
+        print(f"[EnvCheck]: ❌ {env_path} file not found!")
+        print("[EnvCheck]: Please create .env file from .env.example and set SPREADSHEET_ID")
         return False
     
     spreadsheet_id = read_env_value('SPREADSHEET_ID')
     if not spreadsheet_id or spreadsheet_id == 'YOUR_SPREADSHEET_ID_HERE':
-        print("❌ SPREADSHEET_ID not set in .env file!")
-        print("Please add your Google Sheets ID to .env file")
+        print("[EnvCheck]: ❌ SPREADSHEET_ID not set in .env file!")
+        print("[EnvCheck]: Please add your Google Sheets ID to .env file")
         return False
     
-    print(f"✓ SPREADSHEET_ID found in .env: {spreadsheet_id}")
+    print(f"[EnvCheck]: ✓ SPREADSHEET_ID found in .env: {spreadsheet_id}")
     return True
 
 
@@ -44,7 +44,7 @@ def read_env_value(key: str) -> Optional[str]:
                     return line.split('=', 1)[1].strip()
         return None
     except Exception as e:
-        print(f"Error reading .env file: {e}")
+        print(f"[ReadEnv]: Error reading .env file: {e}")
         return None
 
 
