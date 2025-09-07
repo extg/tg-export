@@ -83,7 +83,11 @@ class DataProvider(ABC):
                 # For these fields, check if the effective value would change
                 # (same logic as in preserve_additional_columns)
                 effective_old = existing_val
-                effective_new = new_val if new_val else existing_val
+                # Special handling: '0' is a valid value for unread_count, not empty
+                if field == 'unread_count':
+                    effective_new = new_val if new_val != '' else existing_val
+                else:
+                    effective_new = new_val if new_val else existing_val
 
                 # Special handling for date formatting (leading zeros)
                 if field == 'last_message_date' and effective_old and effective_new:
@@ -165,7 +169,11 @@ class DataProvider(ABC):
                 merged_record[key] = new_val if new_val else existing_val
             elif key in ['unread_count', 'last_message_date']:
                 # Prefer newer/non-empty values for chat-related fields
-                merged_record[key] = new_val if new_val else existing_val
+                # Special handling: '0' is a valid value for unread_count, not empty
+                if key == 'unread_count':
+                    merged_record[key] = new_val if new_val != '' else existing_val
+                else:
+                    merged_record[key] = new_val if new_val else existing_val
             elif key == 'last_updated':
                 # Skip - already handled above
                 pass
