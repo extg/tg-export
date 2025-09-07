@@ -741,15 +741,21 @@ class GoogleSheetsProvider(DataProvider):
     
     def _prepare_data_with_hyperlinks(self, data: pd.DataFrame) -> list:
         """
-        Prepare data for Google Sheets with HYPERLINK formulas for username column
+        Prepare data for Google Sheets with HYPERLINK formulas for username and id columns.
+        
+        - ID column: Creates links to Telegram web app in format https://web.telegram.org/a/#<id>
+        - Username column: Creates links to Telegram profiles in format https://t.me/<username>
         """
         # Get column headers
         headers = data.columns.tolist()
         username_col_index = None
+        id_col_index = None
         
-        # Find the username column index
+        # Find the username and id column indices
         if 'username' in headers:
             username_col_index = headers.index('username')
+        if 'id' in headers:
+            id_col_index = headers.index('id')
         
         # Start with headers
         values = [headers]
@@ -761,8 +767,15 @@ class GoogleSheetsProvider(DataProvider):
                 # Convert to string and handle NaN values
                 cell_str = str(cell_value) if pd.notna(cell_value) and cell_value != '' else ''
                 
+                # Special handling for id column
+                if col_index == id_col_index and cell_str and cell_str != 'nan':
+                    # Create HYPERLINK formula for Telegram web app
+                    telegram_web_url = f"https://web.telegram.org/a/#{cell_str}"
+                    # Create HYPERLINK formula with @ prefix: =HYPERLINK("url", "@url")
+                    hyperlink_formula = f'=HYPERLINK("{telegram_web_url}","{cell_str}")'
+                    row_values.append(hyperlink_formula)
                 # Special handling for username column
-                if col_index == username_col_index and cell_str and cell_str != 'nan':
+                elif col_index == username_col_index and cell_str and cell_str != 'nan':
                     # Create HYPERLINK formula for Telegram profile
                     if cell_str.startswith('@'):
                         # Remove @ if present
