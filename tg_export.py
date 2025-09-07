@@ -36,9 +36,9 @@ os.makedirs(EXPORT_DIR, exist_ok=True)
 
 
 
-async def export_contacts(provider_manager: Optional[ProviderManager] = None):
-    """Export contacts and sync to providers in batches"""
-    print("Exporting contacts...")
+async def collect_contacts():
+    """Collect contacts data without syncing"""
+    print("Collecting contacts...")
     # Use GetContactsRequest with hash=0 to get all contacts
     result = await client(functions.contacts.GetContactsRequest(hash=0))
     
@@ -54,22 +54,18 @@ async def export_contacts(provider_manager: Optional[ProviderManager] = None):
             'phone': contact.phone or '',
             'is_contact': 'Yes',
             'is_bot': 'Yes' if contact.bot else 'No',
-            'has_chat': 'No',  # Will be updated when processing chats
+            'has_chat': 'No',  # Will be updated when merging with chats
             'unread_count': 0,
             'last_message_date': ''
         }
         contacts_data.append(contact_info)
     
-    # Sync all contacts to providers
-    if provider_manager and contacts_data:
-        provider_manager.sync_data(contacts_data)
-    
-    print(f"Processed {len(contacts_data)} contacts")
-    return len(contacts_data)
+    print(f"Collected {len(contacts_data)} contacts")
+    return contacts_data
 
-async def export_chats(provider_manager: Optional[ProviderManager] = None):
-    """Export chats and sync to providers in batches"""
-    print("Exporting chats...")
+async def collect_chats():
+    """Collect chats data without syncing"""
+    print("Collecting chats...")
     dialogs = await client.get_dialogs()
     
     user_chat_records = []
@@ -80,32 +76,69 @@ async def export_chats(provider_manager: Optional[ProviderManager] = None):
         total_chats += 1
         
         if isinstance(entity, User):
-            # Collect user chat records for batch sync
-            if provider_manager:
-                user_record = {
-                    'id': entity.id,
-                    'username': getattr(entity, 'username', None) or '',
-                    'first_name': entity.first_name or '',
-                    'last_name': entity.last_name or '',
-                    'title': f"{entity.first_name or ''} {entity.last_name or ''}".strip(),
-                    'phone': '',  # Phone not available in chat info
-                    'is_contact': 'No',  # Will be updated by provider's sync logic if contact exists
-                    'is_bot': 'Yes' if getattr(entity, 'bot', False) else 'No',
-                    'has_chat': 'Yes',
-                    'unread_count': dialog.unread_count,
-                    'last_message_date': dialog.date.strftime("%Y-%m-%d %H:%M:%S") if dialog.date else ''
-                }
-                user_chat_records.append(user_record)
+            # Collect user chat records
+            user_record = {
+                'id': entity.id,
+                'username': getattr(entity, 'username', None) or '',
+                'first_name': entity.first_name or '',
+                'last_name': entity.last_name or '',
+                'title': f"{entity.first_name or ''} {entity.last_name or ''}".strip(),
+                'phone': '',  # Phone not available in chat info
+                'is_contact': 'No',  # Will be updated when merging with contacts
+                'is_bot': 'Yes' if getattr(entity, 'bot', False) else 'No',
+                'has_chat': 'Yes',
+                'unread_count': dialog.unread_count,
+                'last_message_date': dialog.date.strftime("%Y-%m-%d %H:%M:%S") if dialog.date else ''
+            }
+            user_chat_records.append(user_record)
     
-    # Sync all user chats to providers
-    if provider_manager and user_chat_records:
-        provider_manager.sync_data(user_chat_records)
+    print(f"Collected {total_chats} chats ({len(user_chat_records)} user chats)")
+    return user_chat_records
+
+def merge_contacts_and_chats(contacts_data, chats_data):
+    """Merge contacts and chats data into a single unified dataset"""
+    print("Merging contacts and chats data...")
     
-    print(f"Processed {total_chats} chats ({len(user_chat_records)} user chats synced to providers)")
-    return total_chats
+    # Create a dictionary for efficient lookup by user ID
+    merged_records = {}
+    
+    # First, add all contacts
+    for contact in contacts_data:
+        user_id = str(contact['id'])
+        merged_records[user_id] = contact.copy()
+    
+    # Then merge chat data
+    for chat in chats_data:
+        user_id = str(chat['id'])
+        
+        if user_id in merged_records:
+            # User exists in contacts, merge chat info
+            existing_record = merged_records[user_id]
+            
+            # Update fields that should come from chat data
+            existing_record['has_chat'] = 'Yes'
+            existing_record['unread_count'] = chat['unread_count']
+            existing_record['last_message_date'] = chat['last_message_date']
+            
+            # For fields like username, first_name, last_name - prefer non-empty values
+            for field in ['username', 'first_name', 'last_name']:
+                if chat[field] and not existing_record[field]:
+                    existing_record[field] = chat[field]
+                    # Update title if names were updated
+                    if field in ['first_name', 'last_name']:
+                        existing_record['title'] = f"{existing_record['first_name'] or ''} {existing_record['last_name'] or ''}".strip()
+        else:
+            # User doesn't exist in contacts, add as new record
+            merged_records[user_id] = chat.copy()
+    
+    # Convert back to list
+    merged_list = list(merged_records.values())
+    
+    print(f"Merged data: {len(merged_list)} total records ({len(contacts_data)} contacts, {len(chats_data)} chats)")
+    return merged_list
 
 async def main():
-    """Main function with provider sync (required)"""
+    """Main function with unified data collection and single sync"""
     print("Starting Telegram data export...")
     
     provider_manager = ProviderManager()
@@ -114,11 +147,20 @@ async def main():
     print("Successfully connected to Telegram!")
     
     try:
-        contacts_count = await export_contacts(provider_manager)
-        print(f"Exported {contacts_count} contacts")
+        # Step 1: Collect all data without syncing
+        contacts_data = await collect_contacts()
+        chats_data = await collect_chats()
         
-        chats_count = await export_chats(provider_manager)
-        print(f"Exported {chats_count} chats")
+        # Step 2: Merge contacts and chats data
+        merged_data = merge_contacts_and_chats(contacts_data, chats_data)
+        
+        # Step 3: Single final sync to all providers
+        print("Performing final data synchronization...")
+        if merged_data:
+            provider_manager.sync_data(merged_data)
+            print(f"✓ Successfully synced {len(merged_data)} records to all providers")
+        else:
+            print("No data to sync")
         
         print("Export completed successfully!")
         
