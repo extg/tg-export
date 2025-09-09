@@ -22,7 +22,8 @@ class DataProvider(ABC):
         self.standard_columns = {
             'id', 'username', 'first_name', 'last_name', 'title',
             'phone', 'is_contact', 'is_bot', 'has_chat', 
-            'unread_count', 'last_message_date', 'last_updated'
+            'unread_count', 'last_message_date', 'last_updated',
+            'processing_status', 'messages', 'last_loaded_message'
         }
     
     @abstractmethod
@@ -174,6 +175,10 @@ class DataProvider(ABC):
                     merged_record[key] = new_val if new_val != '' else existing_val
                 else:
                     merged_record[key] = new_val if new_val else existing_val
+            elif key in ['processing_status', 'messages', 'last_loaded_message']:
+                # For message loading fields - preserve existing values, don't overwrite with empty
+                # These fields are managed by message_loader.py, not by telegram export
+                merged_record[key] = existing_val if existing_val else new_val
             elif key == 'last_updated':
                 # Skip - already handled above
                 pass
@@ -205,7 +210,8 @@ class CSVDataProvider(DataProvider):
             return pd.DataFrame(columns=[
                 'id', 'username', 'first_name', 'last_name', 'title',
                 'phone', 'is_contact', 'is_bot', 'has_chat', 
-                'unread_count', 'last_message_date', 'last_updated'
+                'unread_count', 'last_message_date', 'last_updated',
+                'processing_status', 'messages', 'last_loaded_message'
             ])
         
         try:
@@ -381,7 +387,8 @@ class GoogleSheetsProvider(DataProvider):
                 return pd.DataFrame(columns=[
                     'id', 'username', 'first_name', 'last_name', 'title',
                     'phone', 'is_contact', 'is_bot', 'has_chat', 
-                    'unread_count', 'last_message_date', 'last_updated'
+                    'unread_count', 'last_message_date', 'last_updated',
+                    'processing_status', 'messages', 'last_loaded_message'
                 ])
             
             # Convert to DataFrame
