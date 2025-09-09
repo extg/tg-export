@@ -326,16 +326,26 @@ class MessageLoader:
                     data[col] = ''
             
             # Filter rows that need processing
-            # Rows with empty messages column and not currently being processed
+            # Rows with empty messages column, not in progress, and not already done
             pending_mask = (
                 (data[MESSAGES_COLUMN].isna() | (data[MESSAGES_COLUMN] == '')) &
                 (data[PROCESSING_STATUS_COLUMN] != 'in_progress') &
+                (data[PROCESSING_STATUS_COLUMN] != 'done') &
                 (data['id'].notna()) &
                 (data['id'] != '')
             )
             
             pending_rows = data[pending_mask].copy()
             print(f"[MessageLoader]: Found {len(pending_rows)} rows pending message loading")
+            
+            # Debug: show which rows will be processed
+            # if len(pending_rows) > 0:
+            #     print("[MessageLoader]: Rows to process:")
+            #     for idx, (row_index, row) in enumerate(pending_rows.iterrows()):
+            #         chat_title = row.get('title', f'Chat {row["id"]}')
+            #         status = row.get(PROCESSING_STATUS_COLUMN, 'empty')
+            #         messages_status = 'empty' if pd.isna(row.get(MESSAGES_COLUMN)) or row.get(MESSAGES_COLUMN) == '' else 'has_data'
+            #         print(f"  {idx + 1}. Row {row_index}: {chat_title} (ID: {row['id']}) - Status: {status}, Messages: {messages_status}")
             
             return pending_rows
             
