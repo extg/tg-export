@@ -353,6 +353,83 @@ class MessageLoader:
             print(f"[MessageLoader]: Error getting pending rows: {e}")
             return pd.DataFrame()
     
+    def get_processing_status(self) -> Dict[str, int]:
+        """Get processing status statistics for all rows
+        
+        Returns:
+            Dictionary with processing statistics
+        """
+        try:
+            # Read current data from Google Sheets
+            data = self.sheets_provider.read_data()
+            
+            if data.empty:
+                print("[MessageLoader]: No data found in Google Sheets")
+                return {
+                    'total_rows': 0,
+                    'processed': 0,
+                    'pending': 0,
+                    'in_progress': 0,
+                    'errors': 0,
+                    'no_id': 0
+                }
+            
+            # Ensure required columns exist
+            required_columns = [PROCESSING_STATUS_COLUMN, MESSAGES_COLUMN]
+            for col in required_columns:
+                if col not in data.columns:
+                    data[col] = ''
+            
+            # Filter out rows without valid ID (these are not processable)
+            valid_id_mask = (data['id'].notna()) & (data['id'] != '')
+            valid_rows = data[valid_id_mask]
+            no_id_count = len(data) - len(valid_rows)
+            
+            # Count different statuses
+            status_counts = {
+                'total_rows': len(data),
+                'valid_rows': len(valid_rows),
+                'no_id': no_id_count,
+                'processed': 0,
+                'pending': 0,
+                'in_progress': 0,
+                'errors': 0
+            }
+            
+            if len(valid_rows) == 0:
+                return status_counts
+            
+            # Count by processing status
+            for _, row in valid_rows.iterrows():
+                status = row.get(PROCESSING_STATUS_COLUMN, '').strip().lower()
+                messages = row.get(MESSAGES_COLUMN, '').strip()
+                
+                if status == 'done':
+                    status_counts['processed'] += 1
+                elif status == 'in_progress':
+                    status_counts['in_progress'] += 1
+                elif status == 'error':
+                    status_counts['errors'] += 1
+                else:
+                    # Check if row has messages but no status (legacy processed rows)
+                    if messages and not messages.startswith('[ОШИБКА'):
+                        status_counts['processed'] += 1
+                    else:
+                        status_counts['pending'] += 1
+            
+            return status_counts
+            
+        except Exception as e:
+            print(f"[MessageLoader]: Error getting processing status: {e}")
+            return {
+                'total_rows': 0,
+                'processed': 0,
+                'pending': 0,
+                'in_progress': 0,
+                'errors': 0,
+                'no_id': 0
+            }
+    
     def update_row_status(self, row_index: int, status: str, messages_data: str = None, 
                          last_message_id: int = None, total_messages: int = None) -> bool:
         """Update a specific row's processing status and message data
@@ -576,19 +653,55 @@ async def main():
                        help=f'Number of messages to load per chat (default: {DEFAULT_MESSAGE_LIMIT})')
     parser.add_argument('--skip-total-count', action='store_true',
                        help='Skip counting total messages in chat (faster, but total_messages will be 0)')
+    parser.add_argument('--status', action='store_true',
+                       help='Show processing status (how many records processed vs remaining)')
     
     args = parser.parse_args()
     
-    print("[MessageLoader]: Starting Telegram message loading...")
-    print(f"[MessageLoader]: Configuration:")
-    print(f"  - Max rows: {args.max_rows or 'unlimited'}")
-    print(f"  - Delay between rows: {args.delay} seconds")
-    print(f"  - Messages per chat: {args.message_limit}")
-    print(f"  - Count total messages: {'No' if args.skip_total_count else 'Yes'}")
-    
     try:
-        # Initialize message loader
+        # Initialize message loader (no need to connect to Telegram for status check)
         loader = MessageLoader(message_limit=args.message_limit, skip_total_count=args.skip_total_count)
+        
+        # Handle --status parameter
+        if args.status:
+            print("[MessageLoader]: Checking processing status...")
+            
+            # Get processing status without connecting to Telegram
+            status = loader.get_processing_status()
+            
+            print("\n" + "="*50)
+            print("PROCESSING STATUS REPORT")
+            print("="*50)
+            print(f"Total rows in sheet: {status['total_rows']}")
+            print(f"Rows with valid ID: {status['valid_rows']}")
+            if status['no_id'] > 0:
+                print(f"Rows without ID (skipped): {status['no_id']}")
+            print()
+            print("Processing Status:")
+            print(f"  ✓ Processed: {status['processed']} rows")
+            print(f"  ⏳ Pending: {status['pending']} rows")
+            if status['in_progress'] > 0:
+                print(f"  🔄 In progress: {status['in_progress']} rows")
+            if status['errors'] > 0:
+                print(f"  ❌ Errors: {status['errors']} rows")
+            print()
+            
+            if status['valid_rows'] > 0:
+                processed_percent = (status['processed'] / status['valid_rows']) * 100
+                pending_percent = (status['pending'] / status['valid_rows']) * 100
+                print(f"Progress: {processed_percent:.1f}% completed, {pending_percent:.1f}% remaining")
+            else:
+                print("No valid rows found to process")
+            
+            print("="*50)
+            return
+        
+        print("[MessageLoader]: Starting Telegram message loading...")
+        print(f"[MessageLoader]: Configuration:")
+        print(f"  - Max rows: {args.max_rows or 'unlimited'}")
+        print(f"  - Delay between rows: {args.delay} seconds")
+        print(f"  - Messages per chat: {args.message_limit}")
+        print(f"  - Count total messages: {'No' if args.skip_total_count else 'Yes'}")
         
         # Connect to Telegram
         await client.start(phone=PHONE_NUMBER)
@@ -611,8 +724,10 @@ async def main():
         raise
     
     finally:
-        await client.disconnect()
-        print("[MessageLoader]: Disconnected from Telegram")
+        # Only disconnect if we actually connected
+        if not args.status:
+            await client.disconnect()
+            print("[MessageLoader]: Disconnected from Telegram")
 
 
 if __name__ == '__main__':
