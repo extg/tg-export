@@ -23,7 +23,7 @@ class DataProvider(ABC):
             'id', 'username', 'first_name', 'last_name', 'title',
             'phone', 'is_contact', 'is_bot', 'has_chat', 
             'unread_count', 'last_message_date', 'last_updated',
-            'processing_status', 'messages', 'last_loaded_message'
+            'processing_status', 'messages', 'last_loaded_message', 'total_messages'
         }
     
     @abstractmethod
@@ -175,7 +175,7 @@ class DataProvider(ABC):
                     merged_record[key] = new_val if new_val != '' else existing_val
                 else:
                     merged_record[key] = new_val if new_val else existing_val
-            elif key in ['processing_status', 'messages', 'last_loaded_message']:
+            elif key in ['processing_status', 'messages', 'last_loaded_message', 'total_messages']:
                 # For message loading fields - preserve existing values, don't overwrite with empty
                 # These fields are managed by message_loader.py, not by telegram export
                 merged_record[key] = existing_val if existing_val else new_val
@@ -211,7 +211,7 @@ class CSVDataProvider(DataProvider):
                 'id', 'username', 'first_name', 'last_name', 'title',
                 'phone', 'is_contact', 'is_bot', 'has_chat', 
                 'unread_count', 'last_message_date', 'last_updated',
-                'processing_status', 'messages', 'last_loaded_message'
+                'processing_status', 'messages', 'last_loaded_message', 'total_messages'
             ])
         
         try:
@@ -388,7 +388,7 @@ class GoogleSheetsProvider(DataProvider):
                     'id', 'username', 'first_name', 'last_name', 'title',
                     'phone', 'is_contact', 'is_bot', 'has_chat', 
                     'unread_count', 'last_message_date', 'last_updated',
-                    'processing_status', 'messages', 'last_loaded_message'
+                    'processing_status', 'messages', 'last_loaded_message', 'total_messages'
                 ])
             
             # Convert to DataFrame
