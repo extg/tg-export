@@ -83,20 +83,48 @@ class MessageLoader:
             
             try:
                 # Try to get just one message to check if chat has any messages
-                async for message in client.iter_messages(entity, limit=1):
+                message_found = False
+                async for message in client.iter_messages(entity, limit=5):  # Check first 5 messages for better analysis
+                    message_found = True
+                    
+                    # Log message details for debugging
+                    # print(f"[MessageLoader]: DEBUG - Message ID: {message.id}")
+                    # print(f"[MessageLoader]: DEBUG - Message type: {type(message).__name__}")
+                    # print(f"[MessageLoader]: DEBUG - Has text: {bool(message.text)}")
+                    # print(f"[MessageLoader]: DEBUG - Text content: {repr(message.text) if message.text else 'None'}")
+                    # print(f"[MessageLoader]: DEBUG - Media type: {type(message.media).__name__ if message.media else 'None'}")
+                    # print(f"[MessageLoader]: DEBUG - Message class: {message.__class__.__name__}")
+                    
+                    # Check for various message content types
+                    has_content = bool(
+                        message.text or 
+                        message.media or 
+                        hasattr(message, 'action') and message.action
+                    )
+                    print(f"[MessageLoader]: DEBUG - Has any content: {has_content}")
+                    
                     if message.text:  # Found at least one text message
-                        print(f"[MessageLoader]: Chat {chat_id} has messages")
+                        print(f"[MessageLoader]: Chat {chat_id} has text messages")
                         return {
                             'has_messages': True,
                             'error': None
                         }
+                    
+                    print("---")  # Separator between messages
                 
-                # No text messages found
-                print(f"[MessageLoader]: Chat {chat_id} has no text messages")
-                return {
-                    'has_messages': False,
-                    'error': None
-                }
+                if message_found:
+                    print(f"[MessageLoader]: Chat {chat_id} has messages but no text content")
+                    # Consider messages with media/actions as valid messages too
+                    return {
+                        'has_messages': True,  # Changed: consider non-text messages as valid
+                        'error': None
+                    }
+                else:
+                    print(f"[MessageLoader]: Chat {chat_id} has no messages at all")
+                    return {
+                        'has_messages': False,
+                        'error': None
+                    }
                 
             except (ChannelPrivateError, ChatAdminRequiredError) as e:
                 print(f"[MessageLoader]: ⚠ Access denied for chat {chat_id}: {e}")
