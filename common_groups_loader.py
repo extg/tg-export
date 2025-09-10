@@ -159,8 +159,7 @@ class CommonGroupsLoader:
             pending_mask = (
                 (data[COMMON_GROUPS_COLUMN].isna() | (data[COMMON_GROUPS_COLUMN] == '')) &
                 (data['id'].notna()) &
-                (data['id'] != '') &
-                (data['is_contact'] == 'Yes')  # Only process contacts for privacy reasons
+                (data['id'] != '')
             )
             
             pending_rows = data[pending_mask].copy()
@@ -171,6 +170,74 @@ class CommonGroupsLoader:
         except Exception as e:
             print(f"[CommonGroupsLoader]: Error getting pending rows: {e}")
             return pd.DataFrame()
+    
+    def get_processing_status(self) -> Dict[str, int]:
+        """Get processing status statistics for all rows
+        
+        Returns:
+            Dictionary with processing statistics
+        """
+        try:
+            # Read current data from Google Sheets
+            data = self.sheets_provider.read_data()
+            
+            if data.empty:
+                print("[CommonGroupsLoader]: No data found in Google Sheets")
+                return {
+                    'total_rows': 0,
+                    'processed': 0,
+                    'pending': 0,
+                    'errors': 0,
+                    'no_id': 0
+                }
+            
+            # Ensure common_groups column exists
+            if COMMON_GROUPS_COLUMN not in data.columns:
+                data[COMMON_GROUPS_COLUMN] = ''
+            
+            # Filter out rows without valid ID (these are not processable)
+            valid_id_mask = (data['id'].notna()) & (data['id'] != '')
+            valid_rows = data[valid_id_mask]
+            no_id_count = len(data) - len(valid_rows)
+            
+            # Count different statuses (now processing all valid rows, not just contacts)
+            status_counts = {
+                'total_rows': len(data),
+                'valid_rows': len(valid_rows),
+                'no_id': no_id_count,
+                'processed': 0,
+                'pending': 0,
+                'errors': 0
+            }
+            
+            if len(valid_rows) == 0:
+                return status_counts
+            
+            # Count by common_groups status for all valid rows
+            for _, row in valid_rows.iterrows():
+                common_groups = row.get(COMMON_GROUPS_COLUMN, '').strip()
+                
+                if not common_groups:
+                    # Empty common_groups column - pending
+                    status_counts['pending'] += 1
+                elif common_groups.startswith('[ОШИБКА') or common_groups.startswith('[СИСТЕМНАЯ ОШИБКА'):
+                    # Error messages
+                    status_counts['errors'] += 1
+                else:
+                    # Has data (groups, no groups, privacy restricted, etc.) - processed
+                    status_counts['processed'] += 1
+            
+            return status_counts
+            
+        except Exception as e:
+            print(f"[CommonGroupsLoader]: Error getting processing status: {e}")
+            return {
+                'total_rows': 0,
+                'processed': 0,
+                'pending': 0,
+                'errors': 0,
+                'no_id': 0
+            }
     
     def update_row_common_groups(self, row_index: int, common_groups_data: str) -> bool:
         """Update a specific row's common groups data
@@ -317,17 +384,51 @@ async def main():
                        help='Maximum number of rows to process (default: all)')
     parser.add_argument('--delay', type=int, default=3,
                        help='Delay between rows in seconds (default: 3)')
+    parser.add_argument('--status', action='store_true',
+                       help='Show processing status (how many records processed vs remaining)')
     
     args = parser.parse_args()
     
     try:
+        # Initialize common groups loader (no need to connect to Telegram for status check)
+        loader = CommonGroupsLoader()
+        
+        # Handle --status parameter
+        if args.status:
+            print("[CommonGroupsLoader]: Checking processing status...")
+            
+            # Get processing status without connecting to Telegram
+            status = loader.get_processing_status()
+            
+            print("\n" + "="*50)
+            print("COMMON GROUPS PROCESSING STATUS REPORT")
+            print("="*50)
+            print(f"Total rows in sheet: {status['total_rows']}")
+            print(f"Rows with valid ID (processable): {status['valid_rows']}")
+            if status['no_id'] > 0:
+                print(f"Rows without ID (skipped): {status['no_id']}")
+            print()
+            print("Processing Status:")
+            print(f"  ✓ Processed: {status['processed']} rows")
+            print(f"  ⏳ Pending: {status['pending']} rows")
+            if status['errors'] > 0:
+                print(f"  ❌ Errors: {status['errors']} rows")
+            print()
+            
+            if status['valid_rows'] > 0:
+                processed_percent = (status['processed'] / status['valid_rows']) * 100
+                pending_percent = (status['pending'] / status['valid_rows']) * 100
+                print(f"Progress: {processed_percent:.1f}% completed, {pending_percent:.1f}% remaining")
+            else:
+                print("No valid rows found to process")
+            
+            print("="*50)
+            return
+        
         print("[CommonGroupsLoader]: Starting Telegram common groups loading...")
         print(f"[CommonGroupsLoader]: Configuration:")
         print(f"  - Max rows: {args.max_rows or 'unlimited'}")
         print(f"  - Delay between rows: {args.delay} seconds")
-        
-        # Initialize common groups loader
-        loader = CommonGroupsLoader()
         
         # Connect to Telegram
         await client.start(phone=PHONE_NUMBER)
@@ -350,8 +451,10 @@ async def main():
         raise
     
     finally:
-        await client.disconnect()
-        print("[CommonGroupsLoader]: Disconnected from Telegram")
+        # Only disconnect if we actually connected
+        if not args.status:
+            await client.disconnect()
+            print("[CommonGroupsLoader]: Disconnected from Telegram")
 
 
 if __name__ == '__main__':
