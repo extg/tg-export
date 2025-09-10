@@ -7,6 +7,8 @@ Export contacts and chats from Telegram with support for CSV files and Google Sh
 - Export contacts and chats using Telegram API
 - Save data to CSV files or Google Sheets
 - Merge data from multiple exports
+- **Load common groups between you and your contacts**
+- Load recent messages from chats
 - Google Sheets setup wizard
 - Environment variable configuration
 - Automatic data backups
@@ -16,6 +18,8 @@ Export contacts and chats from Telegram with support for CSV files and Google Sh
 ### Core Components
 
 - **`tg_export.py`** - Main export script
+- **`message_loader.py`** - Message loading script
+- **`common_groups_loader.py`** - Common groups loading script
 - **`data_providers.py`** - Data provider system for CSV and Google Sheets
 - **`setup_google_sheets.py`** - Google Sheets configuration wizard
 
@@ -197,6 +201,26 @@ python tg_export.py
 
 On first run, you'll need to enter the verification code sent to your Telegram account.
 
+### Common Groups Loading
+
+After running the basic export, you can load information about common groups:
+
+```bash
+python common_groups_loader.py
+```
+
+**Options:**
+- `--max-rows N` - Process only first N contacts
+- `--delay N` - Delay between requests (default: 3 seconds)
+
+**Example:**
+```bash
+# Process first 10 contacts with 5-second delays
+python common_groups_loader.py --max-rows 10 --delay 5
+```
+
+**Note:** This feature only works with your contacts (users marked as `is_contact = 'Yes'`) for privacy reasons.
+
 ### What the Script Does
 
 1. **Connects to Telegram** using your API credentials
@@ -221,6 +245,7 @@ The tool exports data in a unified format with the following fields:
 - `unread_count` - Number of unread messages in the chat
 - `last_message_date` - Date of the last message in ISO format
 - `last_updated` - Timestamp when the record was last updated
+- `common_groups` - Common groups/channels with this contact (loaded separately)
 
 ## Smart Data Merging
 

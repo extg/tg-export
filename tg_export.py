@@ -56,7 +56,8 @@ async def collect_contacts():
             'is_bot': 'Yes' if contact.bot else 'No',
             'has_chat': 'No',  # Will be updated when merging with chats
             'unread_count': 0,
-            'last_message_date': ''
+            'last_message_date': '',
+            'common_groups': ''  # Will be populated by common_groups_loader.py
         }
         contacts_data.append(contact_info)
     
@@ -88,7 +89,8 @@ async def collect_chats():
                 'is_bot': 'Yes' if getattr(entity, 'bot', False) else 'No',
                 'has_chat': 'Yes',
                 'unread_count': dialog.unread_count,
-                'last_message_date': dialog.date.strftime("%Y-%m-%d %H:%M:%S") if dialog.date else ''
+                'last_message_date': dialog.date.strftime("%Y-%m-%d %H:%M:%S") if dialog.date else '',
+                'common_groups': ''  # Will be populated by common_groups_loader.py
             }
             user_chat_records.append(user_record)
     
